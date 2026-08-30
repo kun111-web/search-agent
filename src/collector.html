@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'" />
+    <title>采集助手</title>
+    <link rel="stylesheet" href="./collector.css" />
+  </head>
+  <body>
+    <header>
+      <div>
+        <p class="kicker">Collector + Agent</p>
+        <h1>采集助手</h1>
+      </div>
+      <div class="header-right">
+        <p class="status" id="status">未运行</p>
+        <button id="minimize-orb" type="button" class="ghost small">缩为悬浮球</button>
+      </div>
+    </header>
+
+    <nav class="tabs">
+      <button type="button" class="tab active" data-tab="task">工作台</button>
+      <button type="button" class="tab" data-tab="archive">数据库</button>
+      <button type="button" class="tab" data-tab="settings">设置</button>
+    </nav>
+
+    <section id="panel-task" class="panel">
+      <textarea id="task" rows="3" placeholder="写给 Agent 的要求，例如：只要最新文章的标题和摘要，忽略广告和盘面播报"></textarea>
+      <p class="hint">两个模块各自独立启停。采集最多同时盯两个网页、不消耗 token；Agent 才按上面的要求筛选，消耗 token。筛选的范围就是<strong>这次运行采到的那些</strong>，也就是上面「已采集 N 条」的那个 N；重启之前采到的不会再拉进来。每点一次「开始筛选」都按当前要求把这批整个重判一遍，之前判过不符合的也重新判。要求没改时整批命中缓存，不花 token；改了要求就是逐条重问模型，条数多会比较慢，随时可以点停止筛选。下面勾哪个标签页就采哪个，最多勾两个：开程序时会自动勾上常盯的那两个站，想换随时改，一个都不勾就采当前这个；采集期间你尽管去别的标签页看东西，不影响那两个页面在后台继续采。</p>
+
+      <section class="module">
+        <div class="module-head">
+          <h2>模块一 · 采集</h2>
+          <p id="collect-meta">还未开始</p>
+        </div>
+        <div id="tab-picks" class="picks"></div>
+        <div class="row">
+          <button id="start" type="button">开始采集</button>
+          <button id="stop" type="button" class="ghost" disabled>停止采集</button>
+        </div>
+        <ol id="raw-items" class="log compact"></ol>
+        <ol id="steps" class="log compact"></ol>
+      </section>
+
+      <section class="module">
+        <div class="module-head">
+          <h2>模块二 · Agent 输出</h2>
+          <p id="agent-meta">等待符合要求的文章</p>
+        </div>
+        <div class="row">
+          <button id="agent-start" type="button">开始筛选</button>
+          <button id="agent-stop" type="button" class="ghost" disabled>停止筛选</button>
+          <button id="copy-notes" type="button" class="ghost">复制结果</button>
+        </div>
+        <div id="articles" class="notes"></div>
+      </section>
+    </section>
+
+    <section id="panel-archive" class="panel" hidden>
+      <div class="module-head">
+        <h2>已入库的筛选结果</h2>
+        <p id="archive-meta">读取中…</p>
+      </div>
+      <div class="row">
+        <button id="archive-refresh" type="button" class="ghost">刷新</button>
+        <button id="archive-export" type="button" class="ghost">导出全部</button>
+        <button id="archive-clear" type="button" class="ghost">清空全部</button>
+      </div>
+      <div id="archive-days"></div>
+      <p class="hint" id="archive-hint">筛选出的文章会自动按当天日期入库，同一条内容只存一份。点日期展开可以看当天的全部内容。导出可选 Markdown、CSV 或 JSON。三个删除按钮都会先弹窗确认；「清空全部」确认后会连采集池留的原始底稿和判定缓存一起删干净，删完无法恢复。</p>
+    </section>
+
+    <section id="panel-settings" class="panel" hidden>
+      <label>API Base URL
+        <input id="base-url" type="text" spellcheck="false" />
+      </label>
+      <label>模型
+        <input id="model" type="text" spellcheck="false" />
+      </label>
+      <label>API Key
+        <input id="api-key" type="password" spellcheck="false" />
+      </label>
+      <label>接口格式
+        <select id="api-format">
+          <option value="chat">chat —— /chat/completions</option>
+          <option value="responses">responses —— /responses</option>
+        </select>
+      </label>
+      <fieldset class="sub">
+        <legend>备用模型（主模型连不上时顶上来，地址、模型、Key 填齐才启用）</legend>
+        <label>API Base URL
+          <input id="fallback-base-url" type="text" spellcheck="false" />
+        </label>
+        <label>模型
+          <input id="fallback-model" type="text" spellcheck="false" />
+        </label>
+        <label>API Key
+          <input id="fallback-api-key" type="password" spellcheck="false" />
+        </label>
+        <label>接口格式
+          <select id="fallback-api-format">
+            <option value="chat">chat —— /chat/completions</option>
+            <option value="responses">responses —— /responses</option>
+          </select>
+        </label>
+      </fieldset>
+      <label>最长采集时长（分钟，0 表示一直采集到手动停止）
+        <input id="max-minutes" type="number" min="0" max="1440" />
+      </label>
+      <label>无更新多久后自动刷新页面（秒，0 表示不刷新）
+        <input id="refresh-seconds" type="number" min="0" max="3600" />
+      </label>
+      <label>每批送筛条数（1–32，批越大请求越少，单批耗时越长）
+        <input id="batch-size" type="number" min="1" max="32" />
+      </label>
+      <div class="row">
+        <button id="save-settings" type="button">保存</button>
+        <button id="test-settings" type="button" class="ghost">测试连接</button>
+        <button id="clear-cache" type="button" class="ghost">清空筛选缓存</button>
+      </div>
+      <p class="hint" id="settings-hint">API Key 给第二模块用。采集模块不调模型；只有新内容出现时，Agent 才筛选一批。没填 Key 时第二模块原样透传采集结果。</p>
+      <p class="hint" id="cache-hint">判定结果按「要求 + 模型 + 条目」缓存到本地，重筛和重启都不会再花 token。换了要求或模型会自动用新的缓存空间。</p>
+    </section>
+
+    <script src="./collector.js"></script>
+  </body>
+</html>

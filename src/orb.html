@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'" />
+    <title>悬浮球</title>
+    <link rel="stylesheet" href="./orb.css" />
+  </head>
+  <body data-side="right">
+    <!-- 浮在球正上方，收起也看得见，不用展开 -->
+    <div class="status" id="status">
+      <p class="line" id="status-collect"><span class="dot"></span><span class="tag">采集</span><span class="text"></span></p>
+      <p class="line" id="status-model"><span class="dot"></span><span class="tag">模型</span><span class="text"></span></p>
+    </div>
+
+    <div class="ball" id="ball" title="拖动可移动，单击回到主窗口">
+      <span class="ring" id="ring"></span>
+      <div class="glass">
+        <video id="glass-video" autoplay muted playsinline></video>
+        <span class="frost"></span>
+      </div>
+      <span class="glyph">A</span>
+      <span class="badge" id="badge" hidden>0</span>
+      <button type="button" class="expand" id="expand" title="展开查看采集到的消息">▶</button>
+    </div>
+
+    <section class="panel" id="panel" hidden>
+      <div class="panel-head">
+        <span id="panel-title">符合要求的消息</span>
+        <span class="panel-actions">
+          <button type="button" class="font" id="font-down" title="消息字小一点">A－</button>
+          <button type="button" class="font" id="font-up" title="消息字大一点">A＋</button>
+          <button type="button" id="mark-read" title="清空这里的列表，归档数据库不受影响">已读</button>
+          <button type="button" id="collapse">收起</button>
+        </span>
+      </div>
+      <div class="panel-body" id="panel-body"></div>
+      <span class="resize" id="resize" title="拖动调整面板大小"></span>
+    </section>
+    <script src="./orb.js"></script>
+  </body>
+</html>

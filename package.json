@@ -1,0 +1,56 @@
+{
+  "name": "search-agent",
+  "version": "0.2.31",
+  "description": "内置浏览器 + 页面信息采集 Agent",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron .",
+    "dist": "electron-builder",
+    "bundle": "node bundle/make-bundle.js",
+    "ship": "npm run dist && npm run bundle",
+    "test": "node api-format-test.js && electron bugfix-test.js && electron dedup-fix-test.js && electron orb-render-test.js && electron picks-render-test.js && electron retry-pace-test.js && electron scrape-flow-test.js"
+  },
+  "keywords": [
+    "browser",
+    "electron",
+    "agent"
+  ],
+  "author": "",
+  "license": "MIT",
+  "build": {
+    "appId": "com.searchagent.desktop",
+    "productName": "Search Agent",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "electron/**/*",
+      "src/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "assets/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Search Agent",
+      "artifactName": "Search Agent Setup.exe"
+    },
+    "portable": {
+      "artifactName": "Search Agent.exe"
+    }
+  },
+  "devDependencies": {
+    "electron": "^37.3.1",
+    "electron-builder": "^26.15.3"
+  }
+}

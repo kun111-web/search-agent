@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'" />
+    <title>新标签页</title>
+    <link rel="stylesheet" href="./newtab.css" />
+  </head>
+  <body>
+    <main class="page">
+      <p class="brand">Search Agent</p>
+      <h1>从浏览开始采集</h1>
+      <form id="search">
+        <input id="query" type="text" placeholder="搜索网页，或输入网址" autofocus spellcheck="false" />
+        <button type="submit">前往</button>
+      </form>
+      <div class="shortcuts">
+        <a href="https://www.bing.com">必应</a>
+        <a href="https://www.baidu.com">百度</a>
+        <a href="https://github.com">GitHub</a>
+        <a href="https://www.zhihu.com">知乎</a>
+        <a href="https://www.wikipedia.org">维基</a>
+        <a href="https://news.ycombinator.com">Hacker News</a>
+      </div>
+    </main>
+    <script src="./newtab.js"></script>
+  </body>
+</html>

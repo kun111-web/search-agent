@@ -1,0 +1,415 @@
+:root {
+  --bg: #121318;
+  --text: #ececef;
+  --muted: #8b8d98;
+  --line: #2c2d34;
+  --card: #1b1c22;
+  --accent: #4aa3ff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.5 "Segoe UI", system-ui, sans-serif;
+}
+
+body {
+  padding: 16px 16px 28px;
+  border-left: 1px solid var(--line);
+}
+
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.kicker {
+  margin: 0;
+  color: var(--muted);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-size: 11px;
+}
+
+h1 {
+  margin: 4px 0 0;
+  font-size: 18px;
+}
+
+h2 {
+  margin: 18px 0 8px;
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 650;
+}
+
+.header-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+button.small {
+  padding: 4px 9px;
+  font-size: 12px;
+}
+
+.status {
+  margin: 6px 0 0;
+  color: var(--muted);
+}
+
+.status.running {
+  color: var(--accent);
+}
+
+.tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.tab,
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: var(--text);
+}
+
+.tab,
+button {
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.tab {
+  background: transparent;
+  color: var(--muted);
+  padding: 6px 10px;
+}
+
+.tab.active {
+  background: #22344c;
+  color: #d7e8ff;
+}
+
+button {
+  background: #22344c;
+  color: #d7e8ff;
+  padding: 7px 12px;
+}
+
+button.ghost {
+  background: var(--card);
+  border: 1px solid var(--line);
+  color: var(--text);
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+textarea,
+input,
+select,
+.log,
+.notes article,
+.excerpt {
+  width: 100%;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+textarea,
+input,
+select {
+  padding: 10px;
+  outline: 0;
+}
+
+/* 下拉框不跟着系统配色走，不然深色面板里会冒出一块白底 */
+select {
+  appearance: none;
+  cursor: pointer;
+}
+
+select option {
+  background: var(--card);
+  color: var(--text);
+}
+
+textarea {
+  resize: vertical;
+  min-height: 92px;
+}
+
+label {
+  display: block;
+  margin-bottom: 10px;
+  color: var(--muted);
+}
+
+label input,
+label select {
+  margin-top: 6px;
+}
+
+/* 备用模型那几项圈起来，免得和主模型的看串 */
+.sub {
+  margin: 0 0 10px;
+  padding: 12px 12px 2px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.sub legend {
+  padding: 0 6px;
+  color: var(--muted);
+}
+
+.hint,
+.summary,
+.url,
+.empty {
+  color: var(--muted);
+}
+
+/* 导出后这里会显示完整文件路径，Windows 路径没有空格可断，得允许任意位置换行。 */
+#archive-hint {
+  overflow-wrap: anywhere;
+}
+
+.log,
+.notes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.module {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.module-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.module-head h2 {
+  margin: 0;
+}
+
+.module-head p {
+  margin: 0;
+  color: var(--muted);
+}
+
+/* 要采哪几个标签页 */
+.picks {
+  margin-top: 8px;
+}
+
+.pick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  cursor: pointer;
+}
+
+.pick input {
+  width: auto;
+  margin: 0;
+  flex: 0 0 auto;
+  cursor: pointer;
+}
+
+/* 标题长起来没边，挤到一行里省下的空间给列表本身 */
+.pick span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.pick:has(input:disabled) {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.picks .hint {
+  margin: 4px 0 0;
+}
+
+/* 同时采两个页面时，Agent 输出按站分块 */
+.art-block + .art-block {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.art-block > header {
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-weight: 650;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.log.compact {
+  max-height: 180px;
+  overflow: auto;
+}
+
+.log li,
+.notes article {
+  padding: 10px;
+  margin-bottom: 8px;
+}
+
+.log strong,
+.title {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.title {
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.url {
+  word-break: break-all;
+}
+
+.stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.stats span {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 6px 8px;
+}
+
+.excerpt {
+  margin: 8px 0 0;
+  padding: 10px;
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+  color: var(--text);
+}
+
+img {
+  width: 100%;
+  margin-top: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+}
+
+.day {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+
+.day-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  cursor: pointer;
+}
+
+.day-head:hover {
+  background: #20222a;
+}
+
+.day-caret {
+  color: var(--muted);
+  width: 10px;
+  flex: none;
+}
+
+.day-date {
+  font-weight: 650;
+}
+
+.day-count {
+  color: var(--muted);
+  flex: 1;
+}
+
+.day-head button {
+  padding: 4px 9px;
+  font-size: 12px;
+}
+
+.day-body {
+  border-top: 1px solid var(--line);
+  padding: 4px 10px 10px;
+}
+
+.day-body article {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.day-body article:last-child {
+  border-bottom: 0;
+}
+
+.day-body .full {
+  margin: 6px 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.item-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.item-head strong {
+  flex: 1;
+}
+
+.item-head button {
+  padding: 2px 8px;
+  font-size: 12px;
+  flex: none;
+}

@@ -1,0 +1,64 @@
+# 这个文件由 bundle/make-bundle.js 生成，下面那份配置是生成时那台机器上的当前配置。
+# 换了 Key 或改了模型，要重新跑一次 npm run bundle 才会更新。
+$ErrorActionPreference = "Stop"
+
+$config = @'
+__CONFIG_JSON__
+'@
+
+function Close-Up($code) {
+  Write-Host ""
+  Read-Host "  按回车关闭"
+  exit $code
+}
+
+Write-Host ""
+Write-Host "  Search Agent - 导入配置"
+Write-Host "  -----------------------"
+Write-Host ""
+
+try {
+  # 程序退出时会把内存里的设置写回这个文件，开着导入等于白导，所以先让它关掉
+  if (Get-Process "Search Agent" -ErrorAction SilentlyContinue) {
+    Write-Host "  Search Agent 正在运行。它退出的时候会把旧配置写回去，得先关掉。"
+    Read-Host "  关好之后按回车继续"
+    if (Get-Process "Search Agent" -ErrorAction SilentlyContinue) {
+      Write-Host "  还在运行，这次就先不动你的配置了。关掉程序再跑一遍这个脚本。"
+      Close-Up 1
+    }
+  }
+
+  $dir = Join-Path $env:APPDATA "Search Agent"
+  New-Item -ItemType Directory -Force -Path $dir | Out-Null
+  $target = Join-Path $dir "agent-settings.json"
+
+  if (Test-Path $target) {
+    $backup = Join-Path $dir ("agent-settings.覆盖前备份-" + (Get-Date -Format "yyyyMMdd-HHmmss") + ".json")
+    Copy-Item $target $backup -Force
+    Write-Host "  这台机器原来的配置已备份成 $(Split-Path $backup -Leaf)"
+  }
+
+  # 不带 BOM，跟程序自己写这个文件时的格式保持一致
+  [System.IO.File]::WriteAllText($target, $config, (New-Object System.Text.UTF8Encoding $false))
+
+  $saved = $config | ConvertFrom-Json
+  Write-Host "  已写入 $target"
+  Write-Host ""
+  Write-Host "    接口地址   $($saved.baseUrl)"
+  Write-Host "    模型       $($saved.model)"
+  Write-Host "    API Key    $(if ($saved.apiKey) { '已带上（' + $saved.apiKey.Length + ' 位）' } else { '是空的，得自己去设置里填' })"
+  Write-Host ""
+  Write-Host "    备用模型   $(if ($saved.fallbackModel) { $saved.fallbackModel + '  ' + $saved.fallbackBaseUrl } else { '没配' })"
+  Write-Host "    备用 Key   $(if ($saved.fallbackApiKey) { '已带上（' + $saved.fallbackApiKey.Length + ' 位）；主模型断了会自动顶上' } else { '是空的，主模型断了不会自动顶上' })"
+  Write-Host ""
+  Write-Host "    最长时长   $($saved.maxMinutes) 分钟（0 表示一直采到手动停）"
+  Write-Host "    自动刷新   $($saved.refreshSeconds) 秒（0 表示不刷新）"
+  Write-Host ""
+  Write-Host "  打开 Search Agent，设置页里就是这些值。装程序和跑这个脚本谁先谁后都行。"
+} catch {
+  Write-Host ""
+  Write-Host "  没弄成：$($_.Exception.Message)"
+  Close-Up 1
+}
+
+Close-Up 0

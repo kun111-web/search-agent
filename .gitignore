@@ -1,0 +1,22 @@
+node_modules/
+dist/
+out/
+.DS_Store
+Thumbs.db
+*.log
+.idea/
+.vscode/
+.env
+.env.*
+
+# 运行时数据本来都在 %APPDATA%\Search Agent\ 下，不该出现在源码目录里。
+# 万一手抖拷进来了，这几条兜着，别让 Key 和采到的内容跟着提交上去。
+agent-settings.json
+agent-settings.*.json
+*.corrupt
+*.jsonl
+*.json.migrated
+filter-cache.json
+session.json
+pool/
+archive/

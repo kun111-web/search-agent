@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: https:; style-src 'self'" />
+    <title>Search Agent</title>
+    <link rel="stylesheet" href="./chrome.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <div class="tab-strip" id="tab-strip">
+        <div class="tabs" id="tabs"></div>
+        <button class="icon-btn new-tab" id="new-tab" title="新标签页 (Ctrl+T)" type="button">+</button>
+        <div class="caption-spacer"></div>
+      </div>
+
+      <div class="toolbar">
+        <div class="nav-group">
+          <button class="icon-btn" id="back" title="后退" type="button" disabled>
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M12.5 4.5 7 10l5.5 5.5" /></svg>
+          </button>
+          <button class="icon-btn" id="forward" title="前进" type="button" disabled>
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7.5 4.5 13 10l-5.5 5.5" /></svg>
+          </button>
+          <button class="icon-btn" id="reload" title="刷新" type="button">
+            <svg viewBox="0 0 20 20" aria-hidden="true" id="reload-icon"><path d="M16 10a6 6 0 1 1-1.7-4.2M16 4v4h-4" /></svg>
+          </button>
+          <button class="icon-btn" id="home" title="主页" type="button">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 9.2 10 3.5l6.5 5.7V16a1 1 0 0 1-1 1h-3.5v-4.2H8v4.2H4.5a1 1 0 0 1-1-1z" /></svg>
+          </button>
+        </div>
+
+        <form class="omnibox" id="omnibox">
+          <span class="secure" id="secure" title="连接状态">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6.5 9V7.2a3.5 3.5 0 0 1 7 0V9M5.5 9h9v7h-9z" /></svg>
+          </span>
+          <input
+            id="url"
+            type="text"
+            spellcheck="false"
+            autocomplete="off"
+            placeholder="搜索或输入网址"
+          />
+        </form>
+
+        <div class="nav-group">
+          <button class="text-btn" id="collect" title="采集当前页 (Ctrl+Shift+C)" type="button">采集</button>
+          <button class="text-btn" id="toggle-collector" title="Agent 面板 (Ctrl+Shift+A)" type="button">Agent</button>
+        </div>
+      </div>
+      <div class="progress" id="progress" hidden></div>
+    </div>
+    <script src="./chrome.js"></script>
+  </body>
+</html>

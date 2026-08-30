@@ -1,0 +1,489 @@
+:root {
+  --ball: 64px;
+  --gap: 10px;
+  --text: #1b1d22;
+  --muted: #6b7080;
+  --card: rgba(255, 255, 255, 0.97);
+  --line: #e2e5ea;
+  --accent: #2f6fed;
+  --brand: #e02020;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* 下面给 .ball .panel 之类设了 display，会盖掉 hidden 属性自带的 display:none */
+[hidden] {
+  display: none !important;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+  color: var(--text);
+  font: 12px/1.5 "Segoe UI", system-ui, sans-serif;
+  user-select: none;
+  cursor: default;
+}
+
+body {
+  display: flex;
+  align-items: center;
+  gap: var(--gap);
+}
+
+body[data-side="left"] {
+  flex-direction: row-reverse;
+}
+
+/* 面板高到顶住屏幕上边时会被整体压回屏内，球就不在窗口正中了，垂直位置由主进程
+   算好的 --ball-top 说了算（收起时窗口只有球那么大，偏移是 0）。 */
+.ball {
+  position: relative;
+  align-self: flex-start;
+  margin-top: var(--ball-top, 0px);
+  flex: 0 0 var(--ball);
+  width: var(--ball);
+  height: var(--ball);
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  cursor: grab;
+  filter: drop-shadow(0 8px 16px rgba(15, 23, 42, 0.35));
+}
+
+/* 圆形裁剪容器：抓来的屏幕画面在这里被裁成正圆 */
+.glass {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  overflow: hidden;
+}
+
+.glass video {
+  position: absolute;
+  top: 0;
+  left: 0;
+  object-fit: fill;
+  /* 真正的毛玻璃：模糊的是球背后那块屏幕画面 */
+  filter: blur(14px) saturate(150%) brightness(1.14);
+  pointer-events: none;
+}
+
+/* 霜面：给模糊画面盖一层白，压住杂色并做出球体的明暗 */
+.frost {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  box-shadow:
+    inset 0 1px 2px rgba(255, 255, 255, 0.95),
+    inset 0 -10px 18px rgba(255, 255, 255, 0.28),
+    inset 0 6px 14px rgba(255, 255, 255, 0.4);
+  pointer-events: none;
+  background:
+    linear-gradient(155deg, rgba(255, 255, 255, 0.42) 0%, rgba(255, 255, 255, 0) 46%),
+    radial-gradient(
+      circle at 50% 50%,
+      rgba(255, 255, 255, 0.94) 0%,
+      rgba(255, 255, 255, 0.9) 46%,
+      rgba(255, 255, 255, 0.6) 80%,
+      rgba(255, 255, 255, 0.38) 100%
+    );
+}
+
+/* 抓屏成功后霜面减薄，让背后的模糊画面透出来 */
+body.glass-on .frost {
+  background:
+    linear-gradient(155deg, rgba(255, 255, 255, 0.5) 0%, rgba(255, 255, 255, 0.1) 48%, rgba(255, 255, 255, 0.28) 100%),
+    rgba(255, 255, 255, 0.24);
+}
+
+/* 左上角的高光 */
+.frost::before {
+  content: "";
+  position: absolute;
+  top: 4px;
+  left: 8px;
+  width: 30px;
+  height: 16px;
+  border-radius: 50%;
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0));
+}
+
+.ball:active {
+  cursor: grabbing;
+}
+
+.glyph {
+  position: relative;
+  z-index: 3;
+  font-size: 34px;
+  font-weight: 800;
+  color: var(--brand);
+  letter-spacing: 0.02em;
+  line-height: 1;
+  text-shadow: 0 1px 1px rgba(255, 255, 255, 0.8);
+}
+
+/* 采集运行中时慢速呼吸，停止后静止 */
+.ring {
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 2px solid rgba(224, 32, 32, 0.7);
+  opacity: 0;
+}
+
+.ring.running {
+  animation: pulse 2.4s ease-out infinite;
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(0.92);
+    opacity: 0.75;
+  }
+  100% {
+    transform: scale(1.28);
+    opacity: 0;
+  }
+}
+
+.badge {
+  position: absolute;
+  z-index: 3;
+  top: -2px;
+  right: -2px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 10px;
+  background: var(--brand);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+  border: 1.5px solid rgba(255, 255, 255, 0.9);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+/* 收起时整个窗口只有 64px，按钮必须完整落在球内，越界的部分会被窗口边界裁掉。
+   按钮是个圆：圆心在球心的斜下方 √2×(32−10−半径) 处，加上自己的半径不能超过球半径
+   32。22px 的按钮算下来是 26.6，还留着几个像素的余量。 */
+.expand {
+  position: absolute;
+  z-index: 4;
+  right: 10px;
+  bottom: 10px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(27, 29, 34, 0.78);
+  color: #fff;
+  font-size: 10px;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  opacity: 0.95;
+  transition: opacity 0.15s ease, background 0.15s ease, transform 0.2s ease;
+}
+
+body[data-side="left"] .expand {
+  right: auto;
+  left: 10px;
+}
+
+.expand:hover {
+  opacity: 1;
+  background: rgba(27, 29, 34, 0.8);
+}
+
+/* 箭头始终指向面板即将出现的那一侧，展开后翻过来指向收起方向 */
+body[data-side="left"] .expand,
+body[data-expanded="1"] .expand {
+  transform: rotate(180deg);
+}
+
+body[data-side="left"][data-expanded="1"] .expand {
+  transform: rotate(0deg);
+}
+
+/* 宽高都跟着窗口走：面板多大由主进程 setBounds 说了算（记着上次拖成的尺寸），
+   这里写死尺寸的话拖大窗口只会露出一片透明。 */
+.panel {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  /* 顶上那条留给状态栏，面板贴着窗口下边缘 */
+  align-self: flex-end;
+  height: calc(100% - var(--status-h, 38px));
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(23, 43, 77, 0.22);
+  overflow: hidden;
+}
+
+/* 远离球的那个下角。三道斜纹是渐变画的，不额外占节点。 */
+.resize {
+  position: absolute;
+  z-index: 4;
+  right: 0;
+  bottom: 0;
+  width: 20px;
+  height: 20px;
+  cursor: nwse-resize;
+  opacity: 0.6;
+  background:
+    linear-gradient(315deg, transparent 30%, var(--muted) 30%, var(--muted) 38%, transparent 38%),
+    linear-gradient(315deg, transparent 52%, var(--muted) 52%, var(--muted) 60%, transparent 60%),
+    linear-gradient(315deg, transparent 74%, var(--muted) 74%, var(--muted) 82%, transparent 82%);
+}
+
+body[data-side="left"] .resize {
+  right: auto;
+  left: 0;
+  cursor: nesw-resize;
+  transform: scaleX(-1);
+}
+
+.resize:hover {
+  opacity: 0.9;
+}
+
+.panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.panel-head button {
+  border: 0;
+  border-radius: 6px;
+  padding: 3px 8px;
+  background: #eef0f4;
+  color: #3b4152;
+  font: inherit;
+  cursor: pointer;
+}
+
+#panel-title {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.panel-actions {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 6px;
+}
+
+#mark-read {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* 面板窄到 220px 时头上要塞四个按钮，字号这两个挤成方块，只留一个字符的地方 */
+.panel-head button.font {
+  padding: 3px 5px;
+  font-weight: 700;
+  letter-spacing: -0.05em;
+}
+
+.panel-head button:hover {
+  background: #e2e5ea;
+}
+
+.panel-head button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.panel-head button:disabled:hover {
+  background: #eef0f4;
+}
+
+/* 两行状态浮在球正上方，收起也看得见，不用点开面板。窗口比球高出的那一条就是给它的
+   （主进程按 STATUS_H 撑出来，--status-h 是同一个数）。 */
+.status {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  /* 底下留点缝，跟球分开 */
+  height: calc(var(--status-h, 46px) - 5px);
+  padding: 4px 9px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 6px 16px rgba(23, 43, 77, 0.2);
+  font-size: 11px;
+  overflow: hidden;
+}
+
+/* 两行都得完整落在这条里，行高按字号收紧，别让第二行被裁掉半截 */
+.status .line {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0;
+  line-height: 1.35;
+  color: #3b4152;
+}
+
+.status .line + .line {
+  margin-top: 2px;
+}
+
+/* 两个标签宽度对齐，后面的字才不会一行一个起点 */
+.status .tag {
+  flex: 0 0 auto;
+  width: 26px;
+  color: var(--muted);
+}
+
+/* 状态是一句会变长的话，挤成一行省地方给列表 */
+.status .text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* 在跑的那行点亮一个呼吸的点，一眼看出是在动还是停着。
+   这个点是 flex 项、不是 ::after：行内元素会把行盒撑高，跑起来的时候第二行就被状态栏
+   下边缘裁掉半截。位置也一直占着（只是藏起来），亮与不亮两行的字都对齐。 */
+.status .dot {
+  flex: 0 0 5px;
+  align-self: center;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  visibility: hidden;
+}
+
+.status .line.on .dot,
+.status .line.warn .dot {
+  visibility: visible;
+  animation: blink 1.6s ease-in-out infinite;
+}
+
+.status .line.warn {
+  color: var(--brand);
+}
+
+.status .line.warn .dot {
+  background: var(--brand);
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+/* 只有消息这块跟着字号倍率走，面板头部不跟：那几个按钮一放大就把标题挤没了，
+   而想看清的是消息本身。下面卡片里的字号全用 em，跟着这一处一起缩放。 */
+.panel-body {
+  overflow-y: auto;
+  padding: 6px;
+  font-size: calc(12px * var(--font-scale, 1));
+}
+
+/* 同时采两个页面时按站分块 */
+.group + .group {
+  margin-top: 8px;
+  padding-top: 2px;
+  border-top: 1px solid var(--line);
+}
+
+/* 块头吸顶，滚到一半也看得出现在看的是哪个站的。负的 top 是抵掉 panel-body 的内边距，
+   让它真正贴住上边缘。 */
+.group > header {
+  position: sticky;
+  top: -6px;
+  z-index: 1;
+  padding: 5px 8px;
+  background: var(--card);
+  color: #3b4152;
+  font-size: 0.92em;
+  font-weight: 650;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.group .empty {
+  padding: 8px;
+  text-align: left;
+  font-size: 0.92em;
+}
+
+.card {
+  padding: 7px 8px;
+  border-radius: 8px;
+}
+
+.card + .card {
+  margin-top: 4px;
+  border-top: 1px solid var(--line);
+}
+
+.card.fresh {
+  background: rgba(47, 111, 237, 0.09);
+}
+
+.card strong {
+  display: block;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.card p {
+  margin: 3px 0 0;
+  color: #4b5162;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.card .meta {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.92em;
+}
+
+.empty {
+  padding: 14px 10px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.panel-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.panel-body::-webkit-scrollbar-thumb {
+  background: #c3c8d2;
+  border-radius: 3px;
+}
