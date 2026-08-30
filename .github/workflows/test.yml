@@ -1,0 +1,40 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    # 有两个套件的 async 入口没接 catch，真抛了异常会一直挂着。默认上限是 6 小时，
+    # 与其干等，不如让它早点算失败。
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - run: npm ci
+
+      # 这一个是纯 Node 的：起本地 HTTP 服务假装模型，验两种接口格式
+      - name: api-format-test
+        run: node api-format-test.js
+
+      # 余下六个要跑在 Electron 运行时里（用到 app、safeStorage、BrowserWindow）。
+      # 无头环境下得有个虚拟屏幕，悬浮球那几项几何测试要拿 screen 的尺寸；
+      # runner 是容器，Chromium 的沙箱起不来，所以关掉。
+      - name: Electron 套件
+        run: |
+          set -e
+          for suite in bugfix-test.js dedup-fix-test.js orb-render-test.js \
+                       picks-render-test.js retry-pace-test.js scrape-flow-test.js; do
+            echo "::group::$suite"
+            xvfb-run --auto-servernum npx electron --no-sandbox "$suite"
+            echo "::endgroup::"
+          done
