@@ -1,5 +1,8 @@
 # Search Agent
 
+[![test](https://github.com/kun111-web/search-agent/actions/workflows/test.yml/badge.svg)](https://github.com/kun111-web/search-agent/actions/workflows/test.yml)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 内置浏览器 + 页面信息采集。开着几个要盯的网站，它把新出的条目抓下来，交给大模型判断哪些值得看，留下的按天入库。窗口可以缩成一个悬浮球贴在屏幕边上，新消息在球边上冒出来。
 
 - **采集**：在页面里注入探针盯着 DOM 变化，同时最多盯两个标签页，各自算配额、各自失败重试，一个站挂了不影响另一个。
