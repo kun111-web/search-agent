@@ -1,0 +1,14 @@
+---
+description: Primary and fallback each pick chat or responses; keep both working
+alwaysApply: true
+---
+
+# API formats
+
+Primary and fallback each have their own `apiFormat` / `fallbackApiFormat`: `chat` or `responses`. Invalid or missing values fall back to `chat`.
+
+- `chat` → `{base}/chat/completions`, body is `messages`, reply is `choices[0].message.content`. The private `thinking: { type: "disabled" }` field belongs only here.
+- `responses` → `{base}/responses`, system text in `instructions`, the rest in `input`, `store: false`. Walk `output` for `output_text` parts; do not assume `output[0]`. Accept a top-level `output_text` if a compatible server sends one.
+- If the base URL already ends with the suffix, do not append it again.
+- `settings:test` and `ModelPool` must pass `apiFormat` through. Usage display accepts both `prompt_tokens`/`completion_tokens` and `input_tokens`/`output_tokens`.
+- Keep `api-format-test.js` green when this path changes.

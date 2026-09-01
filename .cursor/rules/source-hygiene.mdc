@@ -1,0 +1,15 @@
+---
+description: Keep keys, URLs, and private sites out of the published source
+alwaysApply: true
+---
+
+# Source hygiene
+
+This tree is a public GitHub repo. Defaults stay empty.
+
+- `electron/agent/settings.js`: `baseUrl`, `model`, `apiKey`, `fallbackBaseUrl`, `fallbackModel`, `fallbackApiKey` are `""`. Do not put a real provider URL or key in source, tests, README examples, or bundle templates.
+- `electron/default-sites.js`: `DEFAULT_SITES` stays `[]`. No business hostnames. Tests use `example.com` (or `news.example.com`), never a real watched site.
+- Do not commit `%APPDATA%\Search Agent\` files: `agent-settings.json`, `*.jsonl`, `filter-cache.json`, `session.json`, `*.corrupt`.
+- Do not `git add -f` anything `.gitignore` already covers.
+
+A model is usable only when URL, model name, and key are all set. Frontend and `ModelPool` must keep that rule.
