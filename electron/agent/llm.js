@@ -44,7 +44,8 @@ function endpointUrl(baseUrl, format) {
     throw new Error("请先填写 API Base URL");
   }
   const suffix = format === "responses" ? "/responses" : "/chat/completions";
-  return trimmed.endsWith(suffix) ? trimmed : `${trimmed}${suffix}`;
+  // 切换接口格式时，也能接受之前填的完整端点。
+  return `${trimmed.replace(/\/(?:chat\/completions|responses)$/, "")}${suffix}`;
 }
 
 function requestBody({ settings, messages, format }) {
@@ -62,6 +63,7 @@ function requestBody({ settings, messages, format }) {
       instructions,
       input,
       temperature: 0.2,
+      text: { format: { type: "json_object" } },
       // 这套格式默认把每一轮都存在服务端。我们不用那个状态，也没理由把采到的内容
       // 留在别人机器上。
       store: false,
@@ -71,6 +73,8 @@ function requestBody({ settings, messages, format }) {
     model: settings.model,
     temperature: 0.2,
     messages,
+    // 提示词只描述期望，JSON 模式才会约束输出，避免 ping 得到 Pong 等纯文本。
+    response_format: { type: "json_object" },
     // 筛选是分类任务，思维链会把一批 8 条拖到 45 秒、逼近超时线，实测关掉后不仅快
     // 7 倍，判定反而更稳定。MiMo 与 DeepSeek 都认这个字段。它是这两家的私有约定，
     // 所以只在 chat 这套里带——responses 那套换了别的写法，硬塞会被判 400。
@@ -84,13 +88,14 @@ function requestBody({ settings, messages, format }) {
 // 给一个，有就先用它。
 function replyText(payload, format) {
   if (format !== "responses") {
-    return payload.choices?.[0]?.message?.content || "";
+    const content = payload?.choices?.[0]?.message?.content;
+    return typeof content === "string" ? content : "";
   }
-  if (typeof payload.output_text === "string" && payload.output_text.trim()) {
+  if (typeof payload?.output_text === "string" && payload.output_text.trim()) {
     return payload.output_text;
   }
   const parts = [];
-  for (const item of Array.isArray(payload.output) ? payload.output : []) {
+  for (const item of Array.isArray(payload?.output) ? payload.output : []) {
     for (const part of Array.isArray(item?.content) ? item.content : []) {
       if (part?.type === "output_text" && typeof part.text === "string") {
         parts.push(part.text);
@@ -108,6 +113,13 @@ function extractJsonObject(text) {
 
   const fenced = source.match(/```(?:json)?\s*([\s\S]*?)```/i);
   const candidate = fenced ? fenced[1].trim() : source;
+  // 完整 JSON 若是数组或标量，不能从内部截出一个对象假装整份响应合格。
+  try {
+    const value = JSON.parse(candidate);
+    return value && typeof value === "object" && !Array.isArray(value) ? value : null;
+  } catch {
+    // 兼容在 JSON 前后加解释的模型，继续按对象边界提取。
+  }
   const start = candidate.indexOf("{");
   const end = candidate.lastIndexOf("}");
   if (start < 0 || end <= start) {
@@ -172,14 +184,29 @@ async function completeJson({ settings, messages, signal }) {
   }
 
   if (!response.ok) {
-    const detail = payload.error?.message || payload.message || `HTTP ${response.status}`;
-    throw fail(kindFromStatus(response.status), `模型请求失败：${detail}`);
+    const detail = payload?.error?.message || payload?.message || "请检查接口配置";
+    throw fail(kindFromStatus(response.status), `模型请求失败（HTTP ${response.status}）：${detail}`);
   }
 
+  const choice = payload?.choices?.[0];
+  if (choice?.finish_reason === "length" || payload?.status === "incomplete") {
+    throw fail("response", "接口已连接，但输出未完成或被截断，请减少每批条数或提高接口输出上限");
+  }
+  if (choice?.finish_reason === "content_filter" || choice?.message?.refusal ||
+      payload?.output?.some?.((item) => item?.content?.some?.((part) => part?.type === "refusal"))) {
+    throw fail("response", "接口已连接，但模型拒绝回答或内容被过滤");
+  }
   const text = replyText(payload, format);
+  if (!text.trim()) {
+    const reasoning = choice?.message?.reasoning_content ||
+      payload?.output?.some?.((item) => item?.type === "reasoning");
+    throw fail("response", reasoning
+      ? "接口已连接，但只返回了思考内容，没有正文；请检查思考模式和输出额度"
+      : "接口已连接，但没有返回正文；请检查接口格式是否匹配，或稍后重试");
+  }
   const parsed = extractJsonObject(text);
   if (!parsed) {
-    throw fail("response", `模型没有返回可用 JSON：${text.slice(0, 240)}`);
+    throw fail("response", `接口已连接，但正文不是有效的 JSON 对象：${text.slice(0, 240)}`);
   }
   return { data: parsed, usage: payload.usage || null };
 }
@@ -210,11 +237,14 @@ async function testConnection(settings) {
   const { data } = await completeJson({
     settings,
     messages: [
-      { role: "system", content: '只返回 JSON：{"ok":true}' },
-      { role: "user", content: "ping" },
+      { role: "system", content: "只返回一个合法 JSON 对象，不要解释，不要使用 Markdown。" },
+      { role: "user", content: '这是连接和 JSON 输出测试，请准确返回：{"ok":true}' },
     ],
   });
-  return Boolean(data.ok || data.action || data.thought);
+  if (data.ok !== true) {
+    throw fail("response", '接口已连接，但 JSON 校验失败：预期返回 {"ok":true}');
+  }
+  return true;
 }
 
 module.exports = {

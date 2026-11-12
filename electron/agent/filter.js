@@ -1,4 +1,4 @@
-const { describeUsage } = require("./llm");
+const { describeUsage, modelError } = require("./llm");
 const { byNewestFirst } = require("./ordering");
 const cache = require("./filter-cache");
 
@@ -146,15 +146,22 @@ async function filterArticles({ pool, requirement, items, pageUrl, signal }) {
       },
     ],
   });
+  // 即使某个兼容服务忽略取消并返回了结果，也不能让旧任务继续写判定缓存。
+  signal?.throwIfAborted();
   const writeScope = model === plannedModel ? scope : cache.scopeOf(requirement, model);
 
-  const raw = Array.isArray(data.articles) ? data.articles : [];
+  // JSON 合法不代表筛选结果有效，缺失 articles 不能缓存成“全部不符合”。
+  if (!Array.isArray(data?.articles) || data.articles.some((entry) =>
+    !entry || typeof entry !== "object" || Array.isArray(entry))) {
+    throw modelError("response", "接口已连接，但筛选结果缺少有效的 articles 数组，请重试");
+  }
+  const raw = data.articles;
   const byIndex = new Map();
   const unmatched = [];
   for (const entry of raw) {
     const article = normalizeArticle(entry);
     if (!article) {
-      continue;
+      throw modelError("response", "接口已连接，但筛选条目缺少有效的标题或摘要，请重试");
     }
     const index = Number(entry.index);
     if (Number.isInteger(index) && index >= 1 && index <= asked.length && !byIndex.has(index)) {

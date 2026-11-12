@@ -1,4 +1,4 @@
-const { app, BaseWindow, WebContentsView, ipcMain, session, Menu, dialog, desktopCapturer } = require("electron");
+const { app, BaseWindow, WebContentsView, ipcMain, session, Menu, dialog, shell } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs/promises");
 const { TabManager } = require("./tabs");
@@ -11,6 +11,7 @@ const { testConnection } = require("./agent/llm");
 const filterCache = require("./agent/filter-cache");
 const archive = require("./agent/archive");
 const { buildExport, formatFromPath } = require("./agent/archive-export");
+const { DocumentFiles } = require("./document-files");
 
 app.setName("Search Agent");
 
@@ -53,10 +54,6 @@ app.commandLine.appendSwitch("disable-background-timer-throttling");
 app.commandLine.appendSwitch("disable-renderer-backgrounding");
 app.commandLine.appendSwitch("disable-backgrounding-occluded-windows");
 
-// 悬浮球靠抓屏做毛玻璃。Windows 的 WGC 捕获器在程序以管理员身份运行时会被系统拒绝
-// （0x80070005），回退到旧捕获器就没有这个限制，抓一小块低分辨率画面性能也够用。
-app.commandLine.appendSwitch("disable-features", "AllowWgcScreenCapturer,AllowWgcDesktopCapturer");
-
 let mainWindow = null;
 let chromeView = null;
 let tabManager = null;
@@ -65,6 +62,7 @@ let agentRunner = null;
 let orb = null;
 let lastAgentRunning = false;
 let quitting = false;
+let documentFiles = null;
 
 function createIsolatedView() {
   return new WebContentsView({
@@ -200,7 +198,7 @@ function createWindow() {
   chromeView.webContents.loadFile(path.join(__dirname, "../src/chrome.html"));
   collectorView.webContents.loadFile(path.join(__dirname, "../src/collector.html"));
 
-  tabManager = new TabManager(mainWindow, chromeView);
+  tabManager = new TabManager(mainWindow, chromeView, documentFiles);
   tabManager.attachCollector(collectorView);
   tabManager.setBroadcast(() => emitBrowserState());
   tabManager.setCollectHandler((snapshot) => sendToPanels("page:collected", snapshot));
@@ -275,7 +273,7 @@ async function probeModel(settings) {
   try {
     return { ok: await testConnection(settings), model: settings.model };
   } catch (error) {
-    return { ok: false, model: settings.model, message: error.message };
+    return { ok: false, model: settings.model, kind: error.kind, message: error.message };
   }
 }
 
@@ -314,6 +312,25 @@ function onAgent(fn) {
 }
 
 function registerIpc() {
+  ipcMain.handle("files:menu", (event) => {
+    if (!chromeView || event.sender !== chromeView.webContents) return;
+    const contents = tabManager?.getActiveTab()?.view.webContents;
+    const document = documentFiles?.currentDocument(contents);
+    Menu.buildFromTemplate([
+      { label: "在 Edge 中打开当前 PDF", enabled: Boolean(document),
+        click: () => documentFiles.downloadLink(contents, document.url, document.referrer || contents.getURL()) },
+      { label: "将当前网页保存为 PDF 并在 Edge 打开", enabled: Boolean(contents && /^https?:/i.test(contents.getURL())),
+        click: () => void documentFiles.savePage(contents) },
+      { type: "separator" },
+      { label: "打开下载文件夹", click: async () => {
+        try {
+          await fs.mkdir(documentFiles.directory, { recursive: true });
+          const error = await shell.openPath(documentFiles.directory);
+          if (error) throw new Error("open failed");
+        } catch { sendToPanels("files:event", { state: "error", message: "无法打开下载文件夹" }); }
+      } },
+    ]).popup({ window: mainWindow });
+  });
   ipcMain.handle("browser:ready", () => browserState());
   ipcMain.handle("tabs:create", onTabs((_event, url) => tabManager.createTab(url)));
   ipcMain.handle("tabs:close", onTabs((_event, id) => tabManager.closeTab(id)));
@@ -459,6 +476,12 @@ function registerIpc() {
     orb?.clearUnread();
     return { ok: true };
   });
+  ipcMain.handle("orb:copy-text", (event, text) => {
+    if (!orb?.isOpen() || event.sender !== orb.window.webContents) {
+      return { ok: false };
+    }
+    return orb.copyText(text);
+  });
   ipcMain.handle("orb:interactive", (_event, interactive) => {
     orb?.setInteractive(Boolean(interactive));
     return { ok: true };
@@ -480,28 +503,14 @@ function registerIpc() {
 function registerSession() {
   const browserSession = session.fromPartition("persist:search-agent");
 
-  browserSession.on("will-download", (_event, item) => {
-    item.setSavePath(path.join(app.getPath("downloads"), item.getFilename()));
-  });
+  documentFiles = new DocumentFiles({ session: browserSession, notify: (event) => sendToPanels("files:event", event) });
+  documentFiles.register();
 
   browserSession.setPermissionRequestHandler((_webContents, permission, callback) => {
     const allowed = new Set(["notifications", "clipboard-sanitized-write", "fullscreen"]);
     callback(allowed.has(permission));
   });
 
-  // 悬浮球要抓所在那块屏幕做毛玻璃，直接给源，不弹系统选择框。
-  session.defaultSession.setDisplayMediaRequestHandler(
-    (_request, callback) => {
-      desktopCapturer
-        .getSources({ types: ["screen"] })
-        .then((sources) => {
-          const wanted = sources.find((item) => String(item.display_id) === String(orb?.displayId));
-          callback({ video: wanted || sources[0] });
-        })
-        .catch(() => callback({}));
-    },
-    { useSystemPicker: false },
-  );
 }
 
 function registerShortcuts() {

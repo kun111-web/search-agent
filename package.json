@@ -1,15 +1,17 @@
 {
   "name": "search-agent",
-  "version": "0.2.31",
+  "version": "0.2.36",
   "description": "内置浏览器 + 页面信息采集 Agent",
   "main": "electron/main.js",
   "scripts": {
     "start": "electron .",
     "dev": "electron .",
+    "test": "node audit-fixes-test.js && node api-format-test.js && npm run test:desktop",
     "dist": "electron-builder",
     "bundle": "node bundle/make-bundle.js",
     "ship": "npm run dist && npm run bundle",
-    "test": "node api-format-test.js && electron bugfix-test.js && electron dedup-fix-test.js && electron orb-render-test.js && electron picks-render-test.js && electron retry-pace-test.js && electron scrape-flow-test.js"
+    "test:documents": "node document-files-test.js",
+    "test:desktop": "node scripts/run-electron-tests.js"
   },
   "keywords": [
     "browser",

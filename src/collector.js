@@ -877,12 +877,18 @@ document.querySelector("#clear-cache").addEventListener("click", async () => {
 });
 
 document.querySelector("#test-settings").addEventListener("click", async () => {
-  settingsHint.textContent = "正在测试…";
+  const button = document.querySelector("#test-settings");
+  button.disabled = true;
+  settingsHint.textContent = "正在测试连接和 JSON 输出…";
   try {
     await window.browser.saveSettings(readSettingsForm());
     const result = await window.browser.testSettings();
-    const say = (label, probe) =>
-      probe ? `${label} ${probe.model}：${probe.ok ? "通" : `不通（${probe.message || "未知原因"}）`}` : "";
+    const say = (label, probe) => {
+      if (!probe) return "";
+      const status = probe.ok ? "连接成功，JSON 校验通过"
+        : probe.kind === "response" ? "已连接，输出校验失败" : "调用失败";
+      return `${label} ${probe.model}：${status}${probe.ok ? "" : `（${probe.message || "未知原因"}）`}`;
+    };
     settingsHint.textContent = [
       say("主模型", result.main),
       result.fallback ? say("备用模型", result.fallback) : "备用模型：没填 Key，主模型断了不会自动顶上",
@@ -891,6 +897,8 @@ document.querySelector("#test-settings").addEventListener("click", async () => {
       .join("；");
   } catch (error) {
     settingsHint.textContent = error.message || "连接失败。";
+  } finally {
+    button.disabled = false;
   }
 });
 

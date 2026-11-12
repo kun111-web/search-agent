@@ -98,6 +98,17 @@ document.querySelector("#forward").addEventListener("click", () => window.browse
 document.querySelector("#reload").addEventListener("click", () => window.browser.reload());
 document.querySelector("#home").addEventListener("click", () => window.browser.goHome());
 document.querySelector("#collect").addEventListener("click", () => window.browser.collect());
+document.querySelector("#files").addEventListener("click", () => window.browser.showFilesMenu());
+const fileNotice = document.querySelector("#file-notice");
+let noticeTimer;
+window.browser.onFileEvent((event) => {
+  clearTimeout(noticeTimer);
+  fileNotice.hidden = false;
+  fileNotice.dataset.state = event.state;
+  document.querySelector("#file-message").textContent = event.message;
+  if (event.state === "completed") noticeTimer = setTimeout(() => { fileNotice.hidden = true; }, 8000);
+});
+document.querySelector("#dismiss-file-notice").addEventListener("click", () => { fileNotice.hidden = true; });
 collectorBtn.addEventListener("click", () => window.browser.toggleCollector());
 
 document.querySelector("#omnibox").addEventListener("submit", async (event) => {

@@ -264,27 +264,31 @@ function save(articles, meta = {}) {
   }
 
   const savedAt = new Date().toISOString();
-  let added = 0;
   const newlySaved = [];
+  const nextKnown = new Set(known);
 
   for (const article of incoming) {
     const record = itemToRecord(article, meta, savedAt);
-    if (known.has(record.id)) {
+    if (nextKnown.has(record.id)) {
       continue;
     }
-    known.add(record.id);
+    nextKnown.add(record.id);
     newlySaved.push(record);
-    items.push(record);
-    added += 1;
   }
 
+  const added = newlySaved.length;
   if (added) {
     // 存的时候就排好，界面、按天展开、导出就都不用各排一遍。追加进来的批次既可能比
     // 已有内容新（实时采集），也可能更旧（重筛历史），光靠 push 的先后是排不对的。
-    items.sort(byArchivedNewestFirst);
-    persistNewItems(date, items, newlySaved);
+    const nextItems = [...items, ...newlySaved].sort(byArchivedNewestFirst);
+    if (!persistNewItems(date, nextItems, newlySaved)) {
+      // 写入可能只完成了一部分，下次从磁盘重建去重表；不能把未落盘条目当成已保存。
+      forgetDay(date);
+      throw new Error("归档写入失败，请检查磁盘空间和文件权限后重试");
+    }
+    hotDay = { date, items: nextItems, known: nextKnown };
   }
-  return { date, added, total: items.length };
+  return { date, added, total: items.length + added };
 }
 
 // 当天的池：内存里只留"还没落盘的那几行"和已知指纹，条目本身不驻留内存。
@@ -535,12 +539,15 @@ function rewriteDaySmaller(date, kept) {
     return false;
   }
   try {
-    if (kept.length) {
-      writeFileAtomic(file, encodeLines(kept));
-    } else {
+    // 先写权威快照，空列表也写一行空白以阻止 readDay 回退到旧 .json。
+    // 旧文件清理成功后才移除空快照，任何中途失败都不能使删除的数据复活。
+    writeFileAtomic(file, encodeLines(kept));
+    fs.rmSync(dayFile(date), { force: true });
+    if (!kept.length) {
       fs.rmSync(file, { force: true });
     }
   } catch {
+    forgetDay(date);
     return false;
   }
   return true;

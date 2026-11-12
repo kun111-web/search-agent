@@ -7,10 +7,10 @@ const panelTitle = document.querySelector("#panel-title");
 const collapseBtn = document.querySelector("#collapse");
 const expandBtn = document.querySelector("#expand");
 const markReadBtn = document.querySelector("#mark-read");
+const copyAllBtn = document.querySelector("#copy-all");
 const fontDownBtn = document.querySelector("#font-down");
 const fontUpBtn = document.querySelector("#font-up");
 const resizeHandle = document.querySelector("#resize");
-const glassVideo = document.querySelector("#glass-video");
 const statusCollect = document.querySelector("#status-collect");
 const statusModel = document.querySelector("#status-model");
 
@@ -23,12 +23,13 @@ const cards = [];
 let sources = [];
 let expanded = false;
 let drag = null;
-let glassDisplayId = null;
 // 窗口比球大出一条状态栏，那片地方是拿来看的、不是拿来点的：主进程默认让鼠标穿过去，
 // 指针真压到球或面板上时才放开交互。这两个跟着交互走的状态得跟上面几个摆一处，
 // 收起面板、拖动收尾时都要读它们。
 let interactive = false;
 let resizing = false;
+let selectingText = false;
+let pendingRender = false;
 // 上一次画的时候列表里都有哪些条目，用来认出这次新到的。null 是"还没画过"。
 let seenCards = null;
 
@@ -57,7 +58,40 @@ function buildCard(item, fresh) {
     line.textContent = meta;
     card.append(line);
   }
+  const copy = document.createElement("button");
+  copy.type = "button";
+  copy.className = "card-copy";
+  copy.textContent = "复制";
+  copy.title = "复制这条消息的完整内容";
+  copy.addEventListener("click", () => void copyText(copy, cardText(item)));
+  card.append(copy);
   return card;
+}
+
+function cardText(item) {
+  return [item.title || "未命名", item.summary || item.raw,
+    [item.time, item.source, item.match].filter(Boolean).join(" · ")].filter(Boolean).join("\n");
+}
+
+async function copyText(button, text) {
+  const label = button.textContent;
+  button.disabled = true;
+  try {
+    const result = await window.orb.copyText(text);
+    button.textContent = result?.ok ? "已复制" : "复制失败";
+  } catch {
+    button.textContent = "复制失败";
+  }
+  setTimeout(() => {
+    button.textContent = label;
+    button.disabled = button === copyAllBtn && cards.length === 0;
+  }, 1200);
+}
+
+function hasSelectedText() {
+  const selection = window.getSelection();
+  return Boolean(selection && !selection.isCollapsed &&
+    (panelBody.contains(selection.anchorNode) || panelBody.contains(selection.focusNode)));
 }
 
 function emptyLine(text) {
@@ -123,6 +157,12 @@ function groupedCards(fresh) {
 }
 
 function renderCards() {
+  // 选中文本时保留节点，新消息暂缓刷新，避免选区被 replaceChildren 清掉。
+  if (selectingText || hasSelectedText()) {
+    pendingRender = true;
+    return;
+  }
+  pendingRender = false;
   // 人往下翻着、正读到某一条的时候，新消息一到就把他甩回顶部是很讨嫌的：那条还没读完
   // 就找不着了。只有本来就停在顶上的才跟着新消息走。
   const wasAtTop = panelBody.scrollTop <= TOP_SLOP;
@@ -131,6 +171,7 @@ function renderCards() {
 
   panelTitle.textContent = cards.length ? `符合要求的消息 · ${cards.length}` : "符合要求的消息";
   markReadBtn.disabled = cards.length === 0;
+  copyAllBtn.disabled = cards.length === 0;
   panelBody.replaceChildren(...(sources.length < 2 ? flatCards(fresh) : groupedCards(fresh)));
   panelBody.scrollTop = wasAtTop ? 0 : keptScroll;
   seenCards = new Set(cards.map(cardId));
@@ -141,10 +182,13 @@ function setExpanded(next) {
     return;
   }
   expanded = next;
+  if (!next) {
+    window.getSelection()?.removeAllRanges();
+    finishTextSelection();
+  }
   panel.hidden = !next;
   document.body.dataset.expanded = next ? "1" : "0";
   window.orb.setExpanded(next);
-  syncGlassStream();
   // 窗口大小跟着变了，刚才那次"指针压在什么上面"的判断就不作数了。收起面板时指针
   // 多半落到了窗口外面（面板没了那块地方），既收不到 mousemove 也收不到 mouseleave，
   // 不主动放开的话球周围一整片会一直挡着桌面上的点击。
@@ -169,6 +213,7 @@ function markRead() {
     return;
   }
   cards.length = 0;
+  window.getSelection()?.removeAllRanges();
   renderCards();
   renderBadge();
   window.orb.markRead();
@@ -210,7 +255,6 @@ ball.addEventListener("pointerdown", (event) => {
   }
   ball.setPointerCapture(event.pointerId);
   drag = { x: event.screenX, y: event.screenY, moved: false };
-  syncGlassStream();
   window.orb.dragStart();
 });
 
@@ -244,7 +288,6 @@ ball.addEventListener("pointercancel", (event) => {
 function endDrag(event) {
   const moved = drag.moved;
   drag = null;
-  syncGlassStream();
   // capture 可能已经被隐式释放了，直接释放会抛，后面的收尾就都不做了
   if (ball.hasPointerCapture(event.pointerId)) {
     ball.releasePointerCapture(event.pointerId);
@@ -273,6 +316,30 @@ expandBtn.addEventListener("click", (event) => {
 });
 
 markReadBtn.addEventListener("click", markRead);
+copyAllBtn.addEventListener("click", () => void copyText(copyAllBtn, cards.map(cardText).join("\n\n")));
+
+panelBody.addEventListener("pointerdown", (event) => {
+  if (event.button === 0) {
+    selectingText = true;
+    setInteractive(true);
+  }
+});
+
+function finishTextSelection() {
+  selectingText = false;
+  if (pendingRender && !hasSelectedText()) renderCards();
+  if (!drag && !resizing) setInteractive(false);
+}
+// 等 click 派发完再刷新，避免新消息把刚按下的复制按钮换掉。
+document.addEventListener("pointerup", () => setTimeout(finishTextSelection, 0));
+document.addEventListener("pointercancel", finishTextSelection);
+document.addEventListener("selectionchange", () => {
+  if (!selectingText && pendingRender && !hasSelectedText()) renderCards();
+});
+window.addEventListener("blur", () => {
+  finishTextSelection();
+  if (!drag && !resizing) setInteractive(false);
+});
 
 // 尺寸由主进程算：它才知道球在屏幕上的绝对位置，也才能把窗口跟着光标撑开。这边只负责
 // 报告"按下了"和"松手了"。
@@ -283,7 +350,6 @@ resizeHandle.addEventListener("pointerdown", (event) => {
   event.stopPropagation();
   resizeHandle.setPointerCapture(event.pointerId);
   resizing = true;
-  syncGlassStream();
   window.orb.resizeStart();
 });
 
@@ -292,7 +358,6 @@ resizeHandle.addEventListener("pointerdown", (event) => {
 function endResize(event) {
   event.stopPropagation();
   resizing = false;
-  syncGlassStream();
   if (resizeHandle.hasPointerCapture(event.pointerId)) {
     resizeHandle.releasePointerCapture(event.pointerId);
   }
@@ -314,12 +379,11 @@ function setInteractive(next) {
   interactive = next;
   // 也写进 dataset：穿透卡在哪一边是看不见的，出问题时得有个能一眼看出来的地方
   document.body.dataset.hit = next ? "1" : "0";
-  syncGlassStream();
   window.orb.setInteractive(next);
 }
 
 document.addEventListener("mousemove", (event) => {
-  if (drag || resizing) {
+  if (drag || resizing || selectingText) {
     return;
   }
   const under = document.elementFromPoint(event.clientX, event.clientY);
@@ -328,95 +392,15 @@ document.addEventListener("mousemove", (event) => {
 
 // 指针一口气甩出窗口时收不到窗口内的 mousemove，靠这个收尾，别让窗口一直挡着点击。
 document.addEventListener("mouseleave", () => {
-  if (!drag && !resizing) {
+  if (!drag && !resizing && !selectingText) {
     setInteractive(false);
   }
 });
-
-// 抓整块屏幕，再用负偏移把「球背后那一小片」挪到球的位置上，配合圆形裁剪就是真毛玻璃。
-function alignGlass(layout) {
-  const { ballX, ballY, display } = layout;
-  glassVideo.style.width = `${display.width}px`;
-  glassVideo.style.height = `${display.height}px`;
-  glassVideo.style.left = `${display.x - ballX}px`;
-  glassVideo.style.top = `${display.y - ballY}px`;
-}
-
-async function startGlass() {
-  try {
-    const stream = await navigator.mediaDevices.getDisplayMedia({
-      // 反正要模糊：球就 64 像素大、整块画面还要高斯模糊，960 宽加两三帧绰绰有余。
-      // 挂机时这条流可能一开就是几个小时，参数压狠一点省的是几个小时的编码开销。
-      video: { frameRate: { ideal: 2, max: 3 }, width: { ideal: 960 } },
-      audio: false,
-    });
-    glassVideo.srcObject = stream;
-    await glassVideo.play();
-    document.body.classList.add("glass-on");
-    syncGlassStream();
-  } catch (error) {
-    // 抓不到屏就退回纯 CSS 磨砂，不影响使用
-    console.error(`屏幕流启动失败: ${error.name} ${error.message}`);
-    document.body.classList.remove("glass-on");
-  }
-}
-
-function stopGlass() {
-  clearTimeout(glassIdleTimer);
-  const stream = glassVideo.srcObject;
-  if (stream) {
-    stream.getTracks().forEach((track) => track.stop());
-    glassVideo.srcObject = null;
-  }
-  glassActive = true;
-  document.body.classList.remove("glass-on");
-}
-
-// 收起来、指针也不在球上的时候，毛玻璃画面没有任何人细看。把视频轨关掉，
-// Chromium 就会停掉那一路屏幕内容的采集和编码——球一挂几小时，省的就是这几小时。
-// 展开面板或者指针压上来立即恢复，玻璃重新跟上桌面。
-// 停要缓一缓：缩成球的瞬间主窗口才藏起来，头几帧抓到的还是窗口没消失时的桌面，
-// 立刻冻结就把旧画面永久冻在球里了。
-const GLASS_IDLE_MS = 45000;
-let glassActive = true;
-let glassIdleTimer = null;
-
-function applyGlassActive(active) {
-  if (!glassVideo.srcObject || active === glassActive) {
-    return;
-  }
-  glassActive = active;
-  for (const track of glassVideo.srcObject.getVideoTracks()) {
-    track.enabled = active;
-  }
-}
-
-function syncGlassStream() {
-  if (!glassVideo.srcObject) {
-    return;
-  }
-  clearTimeout(glassIdleTimer);
-  const busy = Boolean(expanded || interactive || drag || resizing);
-  if (busy) {
-    applyGlassActive(true);
-  } else {
-    glassIdleTimer = setTimeout(() => applyGlassActive(false), GLASS_IDLE_MS);
-  }
-}
 
 window.orb.onLayout((layout) => {
   document.body.dataset.side = layout.side;
   document.body.style.setProperty("--ball-top", `${layout.ballTop || 0}px`);
   document.body.style.setProperty("--status-h", `${layout.statusHeight || 0}px`);
-  alignGlass(layout);
-  // 球被拖到另一块屏幕时要重新抓那一块
-  if (layout.displayId !== glassDisplayId) {
-    glassDisplayId = layout.displayId;
-    stopGlass();
-    void startGlass();
-  } else {
-    syncGlassStream();
-  }
 });
 
 window.orb.onStatus(showStatus);

@@ -249,3 +249,24 @@ body {
     transform: translateX(40%);
   }
 }
+/* 提示位于浏览器工具栏视图内部，不遮住下方网页。 */
+.file-notice {
+  position: fixed;
+  right: 12px;
+  top: 47px;
+  max-width: min(70vw, 680px);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 10px;
+  border: 1px solid #b9cbdc;
+  border-radius: 7px;
+  background: #eef6ff;
+  color: #24384b;
+  font-size: 12px;
+}
+.file-notice[hidden] { display: none; }
+.file-notice[data-state="error"] { background: #fff3e5; border-color: #e6bd87; }
+.file-notice span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-notice button { background: transparent; border: 0; cursor: pointer; font-size: 18px; color: inherit; }

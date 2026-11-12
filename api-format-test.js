@@ -2,7 +2,7 @@
 // 起一个本地服务假装模型：既验证我们发出去的形状，也验证我们认不认它回的形状。
 const http = require("node:http");
 
-const { completeJson, describeUsage } = require("./electron/agent/llm");
+const { completeJson, describeUsage, testConnection } = require("./electron/agent/llm");
 const { ModelPool } = require("./electron/agent/model-pool");
 
 let pass = 0;
@@ -64,6 +64,7 @@ async function run() {
   check("chat 打到 /chat/completions", chatReq.url === "/v1/chat/completions", chatReq.url);
   check("chat 用 messages 传内容", Array.isArray(chatReq.body.messages) && chatReq.body.messages.length === 2);
   check("chat 保留关思考的私有字段", chatReq.body.thinking?.type === "disabled");
+  check("chat 显式约束 JSON 输出", chatReq.body.response_format?.type === "json_object");
   check("chat 不该冒出 input 字段", chatReq.body.input === undefined);
   check("chat 解析出 JSON", chatOut.data.keep === true);
   check("带上 Bearer", chatReq.auth === "Bearer k1", chatReq.auth);
@@ -100,6 +101,7 @@ async function run() {
   check("responses 不该带 messages", respReq.body.messages === undefined);
   check("关掉服务端存档 store:false", respReq.body.store === false);
   check("不塞 chat 那套的私有字段", respReq.body.thinking === undefined);
+  check("responses 按自己的协议约束 JSON", respReq.body.text?.format?.type === "json_object" && respReq.body.response_format === undefined);
   check("越过 reasoning 项取到正文", respOut.data.keep === false && respOut.data.why === "不相关");
 
   console.log("\n【三】兼容实现给了顶层 output_text");
@@ -130,6 +132,16 @@ async function run() {
   });
   check("不重复拼 /responses", seen.at(-1).url === "/v1/responses", seen.at(-1).url);
   check("重复拼检查后仍能解析", dupOut.data.keep === false);
+  await completeJson({
+    settings: { baseUrl: `${chatBase}/responses/`, model: "m", apiKey: "k", apiFormat: "chat" },
+    messages: MESSAGES,
+  });
+  check("从完整 Responses 地址切回 Chat 不叠加路径", seen.at(-1).url === "/v1/chat/completions");
+  await completeJson({
+    settings: { baseUrl: `${respBase}/chat/completions`, model: "m", apiKey: "k", apiFormat: "responses" },
+    messages: MESSAGES,
+  });
+  check("从完整 Chat 地址切到 Responses 不叠加路径", seen.at(-1).url === "/v1/responses");
 
   console.log("\n【五】格式填错、没填，退回 chat");
   await completeJson({
@@ -264,9 +276,51 @@ async function run() {
   );
   check("没有用量就不显示", describeUsage(null) === "");
 
+  console.log("\n【十一】连接测试和异常输出的真实 HTTP 回归");
+  const probeServer = await startServer((_url, body) => {
+    if (body.model === "auth") return { status: 401, payload: { error: { message: "Invalid key" } } };
+    if (body.model === "null") return { status: 200, payload: null };
+    if (body.model === "incomplete") return { status: 200, payload: { status: "incomplete", output_text: '{"ok":true}' } };
+    const contents = {
+      pong: "Pong! 🏓", malformed: '{"ok":<|TOOL_CALL|>true}', empty: "", reasoning: "",
+      array: '[{"ok":true}]', wrong: '{"ok":false,"thought":"已连接"}',
+      string: '{"ok":"false"}', fenced: '```json\n{"ok":true}\n```',
+    };
+    const constrained = (body.response_format?.type === "json_object" || body.text?.format?.type === "json_object") &&
+      JSON.stringify(body.messages || body.input).includes('\\"ok\\":true');
+    const content = contents[body.model] ?? (constrained ? '{"ok":true}' : "Pong!");
+    if (body.model === "responses") return { status: 200, payload: { output_text: content } };
+    return { status: 200, payload: { choices: [{
+      finish_reason: body.model === "truncated" ? "length" : "stop",
+      message: { content, ...(body.model === "reasoning" ? { reasoning_content: "thinking" } : {}),
+        ...(body.model === "refusal" ? { refusal: "declined" } : {}) },
+    }] } };
+  });
+  const probeBase = `http://127.0.0.1:${probeServer.address().port}/v1`;
+  for (const model of ["chat", "responses", "fenced"]) {
+    const ok = await testConnection({ baseUrl: probeBase, apiKey: "test", model,
+      apiFormat: model === "responses" ? "responses" : "chat" });
+    check(`${model} 连接测试通过 JSON 校验`, ok === true);
+  }
+  for (const [model, expectedKind, message] of [
+    ["pong", "response", "不是有效"], ["malformed", "response", "不是有效"],
+    ["empty", "response", "没有返回正文"], ["reasoning", "response", "思考内容"],
+    ["null", "response", "没有返回正文"], ["array", "response", "不是有效"],
+    ["wrong", "response", "预期返回"], ["string", "response", "预期返回"],
+    ["truncated", "response", "截断"], ["incomplete", "response", "未完成"],
+    ["refusal", "response", "拒绝"], ["auth", "auth", "HTTP 401"],
+  ]) {
+    let failure;
+    try {
+      await testConnection({ baseUrl: probeBase, apiKey: "test", model,
+        apiFormat: model === "incomplete" ? "responses" : "chat" });
+    } catch (error) { failure = error; }
+    check(`${model} 不误报通过且原因明确`, failure?.kind === expectedKind && failure.message.includes(message), failure?.message);
+  }
+
   // 关完再退。close 是异步的，没等它就 process.exit 会把 libuv 的断言撞出来。
   await Promise.all(
-    [chatServer, respServer, flatServer, emptyServer, deadServer].map(
+    [chatServer, respServer, flatServer, emptyServer, deadServer, probeServer].map(
       (server) =>
         new Promise((resolve) => {
           server.closeAllConnections();

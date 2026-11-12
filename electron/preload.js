@@ -1,6 +1,12 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("browser", {
+  showFilesMenu: () => ipcRenderer.invoke("files:menu"),
+  onFileEvent: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on("files:event", listener);
+    return () => ipcRenderer.removeListener("files:event", listener);
+  },
   ready: () => ipcRenderer.invoke("browser:ready"),
   createTab: (url) => ipcRenderer.invoke("tabs:create", url),
   closeTab: (id) => ipcRenderer.invoke("tabs:close", id),

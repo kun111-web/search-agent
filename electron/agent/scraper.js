@@ -146,6 +146,7 @@ class PageScraper {
     // 模型答非所问的连击数。跟 fatalFailures 分开数：前者下一批常自愈，后者重试无用。
     this.responseFailures = 0;
     this.agentGeneration = 0;
+    this.retryTimer = null;
     this.controller = null;
     this.settings = null;
     // 正在跑的那一轮采集循环。点停止之后要靠它等收尾。
@@ -200,11 +201,20 @@ class PageScraper {
     return this.pending.length + this.backlog.length;
   }
 
+  resetFilterGeneration(running) {
+    this.agentController?.abort();
+    this.agentGeneration += 1;
+    clearTimeout(this.retryTimer);
+    this.retryTimer = null;
+    this.filtering = false;
+    this.agentController = running ? new AbortController() : null;
+  }
+
   // 清空数据库时连界面上这些一起收掉。采集和筛选本身不停，新采到的照旧往里写。
   clearOutputs() {
     // 推进代次，让已经发给模型、还在路上的那一批作废。不然清空之后几秒，那批回来照旧
     // 往列表里塞卡片、往归档里写文件，看着像是没删干净。
-    this.agentGeneration += 1;
+    this.resetFilterGeneration(this.agentRunning);
     this.articles = [];
     this.articleTotal = 0;
     this.screenedTotal = 0;
@@ -265,12 +275,10 @@ class PageScraper {
   // 点这个按钮的意思就是"重新判一次"，早退会让按钮看起来毫无反应。要求确实没改时
   // 判定会整批命中缓存，重筛很快，也不花 token。
   startFilter(task, settings) {
-    this.agentController?.abort();
-    this.agentGeneration += 1;
+    this.resetFilterGeneration(true);
     this.settings = settings;
     this.requirement = this.readRequirement(task);
     this.agentRunning = true;
-    this.agentController = new AbortController();
     this.waitFailures = 0;
     this.fatalFailures = 0;
     // 人自己点的筛选，不该还被上一轮的退避拖着等
@@ -318,8 +326,7 @@ class PageScraper {
       return this.getPublicState();
     }
     this.agentRunning = false;
-    this.agentController?.abort();
-    this.agentController = null;
+    this.resetFilterGeneration(false);
     this.emit({ type: "agent-status", running: false, message: reason, tone });
     return this.getPublicState();
   }
@@ -344,6 +351,7 @@ class PageScraper {
       throw new Error("正在抓取");
     }
 
+    this.resetFilterGeneration(this.agentRunning);
     this.running = true;
     this.aborted = false;
     this.steps = [];
@@ -693,17 +701,7 @@ class PageScraper {
     this.collected.push(...entries);
     this.collected.sort(byNewestFirst);
     this.collected = trimPerSource(this.collected, RAW_MAX);
-    if (this.pending.length > PENDING_MAX) {
-      this.pending.sort(byNewestFirst);
-      const kept = trimPerSource(this.pending, PENDING_MAX);
-      const dropped = this.pending.length - kept.length;
-      this.pending = kept;
-      // 丢掉的是最旧的那些，选择是对的，但不说一声的话结果区少了内容却查无实据：
-      // 这些条目在去重表里已经记过，不会再被采到，也就永远不会被判定。
-      if (dropped) {
-        this.addStep("agent", "队列排不下", `筛选跟不上采集，${dropped} 条最旧的没能送去判定`);
-      }
-    }
+    this.trimPending();
 
     this.addStep(
       "collect",
@@ -816,6 +814,10 @@ class PageScraper {
       }
       retryAfterMs = this.requeueFailedBatch(batch, error, fromPending);
     } finally {
+      // 新任务已接管状态，旧请求不能清掉新批次的忙碌标记或安排重试。
+      if (generation !== this.agentGeneration) {
+        return;
+      }
       this.filtering = false;
       this.emit({
         type: "filtering",
@@ -827,7 +829,11 @@ class PageScraper {
       });
       if (this.queueSize() && this.agentRunning) {
         if (retryAfterMs) {
-          setTimeout(() => void this.flushAgent(), retryAfterMs);
+          clearTimeout(this.retryTimer);
+          this.retryTimer = setTimeout(() => {
+            this.retryTimer = null;
+            if (generation === this.agentGeneration) void this.flushAgent();
+          }, retryAfterMs);
         } else {
           void this.flushAgent();
         }
@@ -885,10 +891,7 @@ class PageScraper {
   requeueFailedBatch(batch, error, fromPending = true) {
     if (fromPending) {
       this.pending.push(...batch);
-      if (this.pending.length > PENDING_MAX) {
-        this.pending.sort(byNewestFirst);
-        this.pending.length = PENDING_MAX;
-      }
+      this.trimPending();
     } else {
       // 重筛队列不截断，退回队首下一轮接着重试这一批。
       this.backlog.unshift(...batch);
@@ -930,8 +933,10 @@ class PageScraper {
       return retryAfterMs;
     }
 
-    if (!waiting && !unruly && this.fatalFailures >= FILTER_FATAL_MAX) {
-      this.addStep("agent", "筛选已暂停", `连续 ${this.fatalFailures} 次失败：${error.message}`);
+    if ((unruly && this.responseFailures >= RESPONSE_RETRY_MAX) ||
+        (!waiting && !unruly && this.fatalFailures >= FILTER_FATAL_MAX)) {
+      const failures = unruly ? this.responseFailures : this.fatalFailures;
+      this.addStep("agent", "筛选已暂停", `连续 ${failures} 次失败：${error.message}`);
       this.stopFilter(`筛选失败已暂停：${error.message}`, "warn");
       return 0;
     }
@@ -963,6 +968,17 @@ class PageScraper {
         : `筛选失败：${error.message}`,
     });
     return retryAfterMs;
+  }
+
+  trimPending() {
+    if (this.pending.length <= PENDING_MAX) return;
+    this.pending.sort(byNewestFirst);
+    const kept = trimPerSource(this.pending, PENDING_MAX);
+    const dropped = this.pending.length - kept.length;
+    this.pending = kept;
+    if (dropped) {
+      this.addStep("agent", "队列排不下", `筛选跟不上采集，${dropped} 条最旧的没能送去判定`);
+    }
   }
 
   // 入池失败不能影响采集，最多是这批内容没在底稿里留下痕迹。

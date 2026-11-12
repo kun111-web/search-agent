@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld("orb", {
   resizeStart: () => ipcRenderer.invoke("orb:resize-start"),
   resizeEnd: () => ipcRenderer.invoke("orb:resize-end"),
   markRead: () => ipcRenderer.invoke("orb:mark-read"),
+  copyText: (text) => ipcRenderer.invoke("orb:copy-text", text),
   setInteractive: (interactive) => ipcRenderer.invoke("orb:interactive", interactive),
   // 只报方向，一步多大、到不到头由主进程说
   stepFont: (direction) => ipcRenderer.invoke("orb:font-step", direction),

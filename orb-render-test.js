@@ -27,6 +27,7 @@ contextBridge.exposeInMainWorld("orb", {
   onFont: (fn) => { listeners.font = fn; },
   restore: noop("restore"),
   markRead: noop("markRead"),
+  copyText: async (text) => { calls.push(["copyText", text]); return { ok: true }; },
   setExpanded: noop("setExpanded"),
   setInteractive: noop("setInteractive"),
   dragStart: noop("dragStart"),
@@ -54,10 +55,9 @@ app.whenReady().then(async () => {
   });
 
   const errors = [];
-  win.webContents.on("console-message", (_event, level, message) => {
-    // 抓屏那条是必然失败的（无头窗口拿不到屏幕流），不算问题
-    if (level >= 2 && !message.includes("屏幕流启动失败")) {
-      errors.push(message);
+  win.webContents.on("console-message", (event) => {
+    if (event.level === "error" || event.level === "warning") {
+      errors.push(event.message);
     }
   });
   win.webContents.on("preload-error", (_event, _file, error) => errors.push(`preload: ${error.message}`));
@@ -160,6 +160,31 @@ app.whenReady().then(async () => {
   const failedLine = await modelLine();
   check("重连失败看得出来", failedLine.text.includes("重连失败") && failedLine.warn, `${failedLine.text}，warn=${failedLine.warn}`);
 
+  await run(`document.querySelector("#expand").click()`);
+  const selectable = await run(`getComputedStyle(document.querySelector(".card p")).userSelect`);
+  check("消息文字允许选择", selectable === "text", selectable);
+  await run(`document.querySelector(".card-copy").click()`);
+  const oneCopy = await run(`window.harness.calls().filter(c => c[0] === "copyText").at(-1)?.[1]`);
+  check("单条复制包含标题和完整摘要", oneCopy?.includes("甲站消息\n甲站消息的摘要"), oneCopy);
+  await run(`document.querySelector("#copy-all").click()`);
+  const allCopy = await run(`window.harness.calls().filter(c => c[0] === "copyText").at(-1)?.[1]`);
+  check("全部复制包含每个来源的内容", allCopy?.includes("甲站消息") && allCopy.includes("乙站消息") && allCopy.includes("老消息"));
+
+  await run(`(() => {
+    const node=document.querySelector(".card strong");
+    const range=document.createRange(); range.selectNodeContents(node);
+    const selection=getSelection();selection.removeAllRanges();selection.addRange(range);
+    window.harness.emit("cards", { items: ${more}, sources: [{id:"t1",label:"甲站"},{id:"t2",label:"乙站"}] });
+  })()`);
+  const selected = await run(`getSelection().toString()`);
+  check("新消息不会清掉正在复制的选区", selected === "甲站消息", selected);
+  await run(`getSelection().removeAllRanges()`);
+  await new Promise(resolve => setTimeout(resolve, 50));
+  const updated = await run(`document.querySelector(".card strong").textContent`);
+  check("取消选区后补上暂缓的消息", updated === "又到一条", updated);
+  await run(`document.querySelector("#mark-read").click()`);
+  const emptyCopy = await run(`document.querySelector("#copy-all").disabled`);
+  check("清空消息后禁用全部复制", emptyCopy);
   check("整个过程没有报错", errors.length === 0, errors.join(" | "));
 
   const bad = results.filter((item) => !item.pass);

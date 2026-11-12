@@ -95,7 +95,7 @@ function extractPageMain(linkLimit) {
 const EXTRACT_SOURCE = extractPageMain.toString();
 
 class TabManager {
-  constructor(window, chromeView) {
+  constructor(window, chromeView, documents = null) {
     this.window = window;
     this.chromeView = chromeView;
     this.tabs = new Map();
@@ -105,6 +105,7 @@ class TabManager {
     this.collectorView = null;
     this.broadcast = () => {};
     this.onCollectResult = () => {};
+    this.documents = documents;
   }
 
   setBroadcast(fn) {
@@ -125,15 +126,18 @@ class TabManager {
   }
 
   // 建标签页但不激活。批量恢复会话时逐个激活会反复拆装 contentView 并重排版面。
-  spawnTab(rawUrl) {
+  spawnTab(rawUrl, popupOptions = null) {
     const id = String(this.nextId++);
     const view = new WebContentsView({
+      ...(popupOptions?.webContents ? { webContents: popupOptions.webContents } : {}),
       webPreferences: {
+        ...popupOptions?.webPreferences,
         sandbox: true,
         contextIsolation: true,
         nodeIntegration: false,
         partition: "persist:search-agent",
         backgroundThrottling: false,
+        plugins: false,
       },
     });
 
@@ -157,8 +161,10 @@ class TabManager {
     this.tabs.set(id, tab);
 
     const target = rawUrl ? normalizeNavigationInput(rawUrl) : null;
-    if (target) {
-      view.webContents.loadURL(target);
+    if (popupOptions) {
+      // 由 Chromium 完成原始弹窗导航，保留 POST、来源策略和 window.opener。
+    } else if (target) {
+      void view.webContents.loadURL(target).catch(() => {});
     } else {
       view.webContents.loadFile(NEW_TAB_FILE);
     }
@@ -174,13 +180,37 @@ class TabManager {
 
   bindTabEvents(tab) {
     const { webContents } = tab.view;
+    this.documents?.track(webContents);
 
-    webContents.setWindowOpenHandler(({ url }) => {
-      const target = normalizeExternalUrl(url);
-      if (target) {
-        this.createTab(target);
-      }
-      return { action: "deny" };
+    webContents.setWindowOpenHandler((details) => {
+      const { url } = details;
+      let sameOriginBlob = false;
+      try { sameOriginBlob = url.startsWith("blob:") && new URL(url).origin === new URL(webContents.getURL()).origin; } catch { /* invalid URL */ }
+      if (!normalizeExternalUrl(url) && url !== "about:blank" && !sameOriginBlob) return { action: "deny" };
+      return {
+        action: "allow",
+        outlivesOpener: true,
+        createWindow: (options) => {
+          const child = this.spawnTab(null, options);
+          if (details.disposition === "background-tab") {
+            const loadOptions = { httpReferrer: details.referrer };
+            if (details.postBody) {
+              loadOptions.postData = details.postBody.data;
+              loadOptions.extraHeaders = `Content-Type: ${details.postBody.contentType}${details.postBody.boundary ? `; boundary=${details.postBody.boundary}` : ""}\r\n`;
+            }
+            void child.view.webContents.loadURL(url, loadOptions).catch(() => {});
+            this.emitState();
+          } else this.activateTab(child.id);
+          if (sameOriginBlob && this.documents) {
+            void this.documents.openBlobPdf(webContents, url).then((downloaded) => {
+              // 普通 Blob 页面继续显示；PDF 已交给下载器时收起空白预览标签。
+              if (downloaded && !child.view.webContents.isDestroyed() &&
+                  ["", "about:blank", url].includes(child.view.webContents.getURL())) this.closeTab(child.id);
+            });
+          }
+          return child.view.webContents;
+        },
+      };
     });
 
     webContents.on("page-title-updated", (_event, title) => {
@@ -266,6 +296,11 @@ class TabManager {
         },
         { type: "separator" },
         { label: "在新标签打开链接", enabled: Boolean(params.linkURL), click: () => this.createTab(params.linkURL) },
+        ...(this.documents ? [{
+          label: "下载并打开文件（当前登录态）",
+          enabled: /^(https?:|blob:)/i.test(params.linkURL || ""),
+          click: () => this.documents.downloadLink(webContents, params.linkURL, params.frameURL || webContents.getURL()),
+        }] : []),
         { type: "separator" },
         { label: "检查", click: () => webContents.openDevTools({ mode: "detach" }) },
       ];

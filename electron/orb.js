@@ -1,4 +1,4 @@
-const { app, BrowserWindow, screen } = require("electron");
+const { app, BrowserWindow, screen, Menu, clipboard } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 const { writeFileAtomic } = require("./atomic-write");
@@ -21,7 +21,6 @@ const FONT_MIN = 0.85;
 const FONT_MAX = 2;
 const FONT_STEP = 0.15;
 const DRAG_TICK_MS = 16;
-const KEEP_TOP_MS = 1500;
 // 面板能拖到铺满屏幕，装得下的条数比早先固定 300×260 那会儿多得多。按来源各算一份：
 // 合起来算的话，一个刷得勤的站几分钟就能把另一个站的消息全顶出去。
 const UNREAD_PER_SOURCE = 60;
@@ -73,7 +72,6 @@ class OrbWindow {
     this.dragTimer = null;
     this.dragOrigin = null;
     this.resizeTimer = null;
-    this.topTimer = null;
     this.displayId = null;
     this.ballTop = 0;
     const saved = readPanelState();
@@ -168,6 +166,12 @@ class OrbWindow {
       return;
     }
     this.window.setIgnoreMouseEvents(!interactive, { forward: true });
+  }
+
+  copyText(text) {
+    if (typeof text !== "string" || !text.trim()) return { ok: false };
+    clipboard.writeText(text);
+    return { ok: true };
   }
 
   // 这次在采哪几个页面。球上按这份列表分块，顺序也照它来，跟主窗口的面板对得上。
@@ -293,8 +297,8 @@ class OrbWindow {
     // 别把球周围一大片桌面点不着。指针真移到球或面板上时，渲染层会喊一声再放开。
     this.window.setIgnoreMouseEvents(true, { forward: true });
     this.window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-    // 球自己要抓屏做毛玻璃，必须先把自己从抓屏结果里排除，否则会拍到上一帧的自己。
-    this.window.setContentProtection(true);
+    // 使用 CSS 磨砂，不再通过屏幕采集绘制背景；消息窗口应能被正常截图。
+    this.window.setContentProtection(false);
     this.window.showInactive();
     this.pinToTop();
     this.window.loadFile(path.join(__dirname, "../src/orb.html")).catch(() => {});
@@ -312,7 +316,18 @@ class OrbWindow {
         this.onDismissed?.();
       }
     });
-    this.window.on("blur", () => this.pinToTop());
+    this.window.webContents.on("context-menu", (_event, params) => {
+      if (params.selectionText) {
+        Menu.buildFromTemplate([{ label: "复制", click: () => clipboard.writeText(params.selectionText) }])
+          .popup({ window: this.window });
+      }
+    });
+    this.window.webContents.on("before-input-event", (event, input) => {
+      if (input.type === "keyDown" && (input.control || input.meta) && !input.alt && input.key.toLowerCase() === "c") {
+        event.preventDefault();
+        this.window.webContents.copy();
+      }
+    });
     // hide() 走的是 destroy()，不触发 close，所以能落到这里的都是外面把球关掉了
     // （Alt+F4、系统结束会话之类）。这时候主窗口还藏着，屏幕上一个窗口都不剩，程序就成了
     // 一个只能在任务管理器里看见的进程——必须把主窗口叫回来，别让它变成隐形的。
@@ -320,37 +335,21 @@ class OrbWindow {
     this.window.on("closed", () => {
       this.stopDrag();
       this.stopResize();
-      this.stopKeepTop();
       this.window = null;
     });
-    this.startKeepTop();
   }
 
-  // 别的应用同样可以把自己设成置顶，谁后置顶谁在上面，所以要周期性把自己顶回最前。
+  // 普通置顶即可；失焦和定时器反复 moveTop 会盖住系统截图工具的选区。
   pinToTop() {
     if (!this.isOpen()) {
       return;
     }
-    this.window.setAlwaysOnTop(true, "screen-saver", 1);
-    this.window.moveTop();
-  }
-
-  startKeepTop() {
-    this.stopKeepTop();
-    this.topTimer = setInterval(() => this.pinToTop(), KEEP_TOP_MS);
-  }
-
-  stopKeepTop() {
-    if (this.topTimer) {
-      clearInterval(this.topTimer);
-      this.topTimer = null;
-    }
+    this.window.setAlwaysOnTop(true, "floating");
   }
 
   hide() {
     this.stopDrag();
     this.stopResize();
-    this.stopKeepTop();
     if (this.isOpen()) {
       this.window.destroy();
     }

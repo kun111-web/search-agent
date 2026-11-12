@@ -56,22 +56,12 @@ body[data-side="left"] {
   filter: drop-shadow(0 8px 16px rgba(15, 23, 42, 0.35));
 }
 
-/* 圆形裁剪容器：抓来的屏幕画面在这里被裁成正圆 */
+/* CSS 磨砂外观，不依赖屏幕采集。 */
 .glass {
   position: absolute;
   inset: 0;
   border-radius: 50%;
   overflow: hidden;
-}
-
-.glass video {
-  position: absolute;
-  top: 0;
-  left: 0;
-  object-fit: fill;
-  /* 真正的毛玻璃：模糊的是球背后那块屏幕画面 */
-  filter: blur(14px) saturate(150%) brightness(1.14);
-  pointer-events: none;
 }
 
 /* 霜面：给模糊画面盖一层白，压住杂色并做出球体的明暗 */
@@ -94,13 +84,6 @@ body[data-side="left"] {
       rgba(255, 255, 255, 0.6) 80%,
       rgba(255, 255, 255, 0.38) 100%
     );
-}
-
-/* 抓屏成功后霜面减薄，让背后的模糊画面透出来 */
-body.glass-on .frost {
-  background:
-    linear-gradient(155deg, rgba(255, 255, 255, 0.5) 0%, rgba(255, 255, 255, 0.1) 48%, rgba(255, 255, 255, 0.28) 100%),
-    rgba(255, 255, 255, 0.24);
 }
 
 /* 左上角的高光 */
@@ -264,6 +247,8 @@ body[data-side="left"] .resize {
 
 .panel-head {
   display: flex;
+  flex-wrap: wrap;
+  flex-shrink: 0;
   justify-content: space-between;
   align-items: center;
   gap: 8px;
@@ -284,6 +269,7 @@ body[data-side="left"] .resize {
 }
 
 #panel-title {
+  flex: 1 0 100%;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -293,6 +279,7 @@ body[data-side="left"] .resize {
   flex: 0 0 auto;
   display: flex;
   gap: 6px;
+  flex-wrap: wrap;
 }
 
 #mark-read {
@@ -461,10 +448,36 @@ body[data-side="left"] .resize {
 .card p {
   margin: 3px 0 0;
   color: #4b5162;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  white-space: pre-wrap;
+}
+
+.panel-body {
+  user-select: text;
+  cursor: text;
+  overflow-wrap: anywhere;
+}
+
+.panel-body ::selection {
+  background: #cfe0ff;
+  color: #172b4d;
+}
+
+.card-copy {
+  display: block;
+  margin: 6px 0 0 auto;
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #eef0f4;
+  color: var(--accent);
+  font: 11px/1.5 "Segoe UI", system-ui, sans-serif;
+  cursor: pointer;
+  user-select: none;
+}
+
+.card-copy:disabled {
+  cursor: default;
+  opacity: 0.65;
 }
 
 .card .meta {

@@ -125,6 +125,28 @@ async function testBodyReadFailure() {
   global.fetch = realFetch;
 }
 
+async function testInvalidFilterShape() {
+  const { filterArticles } = require("./electron/agent/filter");
+  const cache = require("./electron/agent/filter-cache");
+  const requirement = "结构校验";
+  const model = "shape-test";
+  for (const [index, data] of [{}, { ok: true }, { articles: null }, { articles: [null] }].entries()) {
+    const item = { key: `invalid-shape-${index}`, text: "测试财报" };
+    const pool = { hasKey: () => true, preferredModel: () => model,
+      complete: async () => ({ data, model }) };
+    let failure;
+    try { await filterArticles({ pool, requirement, items: [item], pageUrl: "" }); }
+    catch (error) { failure = error; }
+    check(`错误结构 ${index} 显式报错`, failure?.kind === "response", failure?.message);
+    check(`错误结构 ${index} 不写入拒绝缓存`, cache.read(cache.scopeOf(requirement, model), item.key) === undefined);
+  }
+  const item = { key: "valid-empty-articles", text: "测试天气" };
+  const pool = { hasKey: () => true, preferredModel: () => model,
+    complete: async () => ({ data: { articles: [] }, model }) };
+  const result = await filterArticles({ pool, requirement, items: [item], pageUrl: "" });
+  check("合法空数组仍表示没有符合条件的文章", result.articles.length === 0 && cache.read(cache.scopeOf(requirement, model), item.key) === null);
+}
+
 // ── 3~6. 采集侧 ────────────────────────────────────────────────────────────
 function fakeTabs(options = {}) {
   const calls = { removeLiveProbe: [], reloadTab: [] };
@@ -320,6 +342,7 @@ function testOrbGeometry() {
 (async () => {
   await testCacheScope();
   await testBodyReadFailure();
+  await testInvalidFilterShape();
   await testRestartAfterStop();
   await testBlockedPageKeepsItems();
   await testPerSourceQuota();

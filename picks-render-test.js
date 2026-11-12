@@ -19,6 +19,7 @@ fs.writeFileSync(
   `const { contextBridge } = require("electron");
 const listeners = {};
 const calls = [];
+let probeResult = { main: { model: "m", ok: true } };
 const settings = {
   baseUrl: "https://example.com/v1", model: "m", apiKey: "",
   fallbackBaseUrl: "https://example.com/v1", fallbackModel: "f", fallbackApiKey: "",
@@ -29,12 +30,12 @@ contextBridge.exposeInMainWorld("browser", {
   onState: (fn) => { listeners.state = fn; },
   getSettings: async () => settings,
   saveSettings: async (next) => { calls.push(["saveSettings", next]); return settings; },
-  testSettings: async () => ({ main: { model: "m", ok: true } }),
+  testSettings: async () => { await new Promise(resolve => setTimeout(resolve, 30)); return probeResult; },
   getAgentState: async () => ({ running: false, agentRunning: false, steps: [], articles: [], rawItems: [], rawTotal: 0, summary: "", pending: 0, sources: [] }),
   getArchiveDays: async () => [],
   getArchiveDay: async () => ({ items: [] }),
   getCacheStats: async () => ({ size: 0 }),
-  getDefaultSites: async () => ["https://news.example.com/"],
+  getDefaultSites: async () => [{ url: "https://news.example.com/", label: "示例快讯站" }],
   ready: async () => ({ ok: true }),
   startCollect: async (task, ids) => { calls.push(["startCollect", task, ids]); },
   stopCollect: async () => {},
@@ -50,12 +51,13 @@ contextBridge.exposeInMainWorld("browser", {
 contextBridge.exposeInMainWorld("harness", {
   emit: (name, payload) => { listeners[name]?.(payload); },
   calls: () => calls,
+  setProbe: (result) => { probeResult = result; },
 });
 `,
   "utf8",
 );
 
-const NEWS_SITE = { id: "t1", title: "????", url: "https://news.example.com/", displayUrl: "news.example.com" };
+const NEWS_SITE = { id: "t1", title: "示例快讯站", url: "https://news.example.com/", displayUrl: "news.example.com" };
 const OTHER = { id: "t2", title: "????", url: "https://example.com/news", displayUrl: "example.com" };
 const state = (list) => JSON.stringify({ tabs: list, activeTabId: "t1" });
 
@@ -98,10 +100,10 @@ app.whenReady().then(async () => {
   check("?????????????", stillChecked === true, `checked=${stillChecked}`);
 
   // ?????????
-  const renamed = { ...NEWS_SITE, title: "????-???" };
+  const renamed = { ...NEWS_SITE, title: "示例快讯站-更新标题" };
   await run(`window.harness.emit("state", ${state([renamed, OTHER])})`);
   const labels = await run(`[...document.querySelectorAll("#tab-picks .pick span")].map((el) => el.textContent)`);
-  check("??????????", labels.some((text) => text.includes("???")), labels.join(" | "));
+  check("??????????", labels.some((text) => text.includes("更新标题")), labels.join(" | "));
   const keptAfterRename = await run(`document.querySelectorAll("#tab-picks input")[1].checked`);
   check("??????????", keptAfterRename === true, `checked=${keptAfterRename}`);
 
@@ -118,6 +120,22 @@ app.whenReady().then(async () => {
   const parsed = JSON.parse(startCall);
   check("?????????", Array.isArray(parsed[2]) && !parsed[2].includes("t2"), startCall);
 
+  for (const [probe, expected] of [
+    [{ ok: true, model: "new-flash" }, "JSON 校验通过"],
+    [{ ok: false, model: "new-flash", kind: "response", message: "正文为空" }, "已连接，输出校验失败"],
+    [{ ok: false, model: "new-flash", kind: "auth", message: "HTTP 401" }, "调用失败"],
+  ]) {
+    await run(`window.harness.setProbe(${JSON.stringify({ main: probe })}); document.querySelector("#test-settings").click()`);
+    const hint = await run(`new Promise((resolve, reject) => {
+      const deadline = Date.now() + 3000;
+      const poll = () => {
+        if (!document.querySelector("#test-settings").disabled) resolve(document.querySelector("#settings-hint").textContent);
+        else if (Date.now() > deadline) reject(new Error("连接测试按钮未恢复"));
+        else setTimeout(poll, 10);
+      }; poll();
+    })`);
+    check(`连接提示：${expected}`, hint.includes(expected), hint);
+  }
   check("????????", errors.length === 0, errors.join(" | "));
 
   const bad = results.filter((item) => !item.pass);

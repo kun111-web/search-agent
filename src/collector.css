@@ -223,11 +223,16 @@ label select {
 
 .module-head h2 {
   margin: 0;
+  flex-shrink: 0;
 }
 
 .module-head p {
   margin: 0;
   color: var(--muted);
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 /* 要采哪几个标签页 */
@@ -283,8 +288,34 @@ label select {
 }
 
 .log.compact {
-  max-height: 180px;
+  height: 180px;
+}
+
+/* 框的位置不随内容条数变化；滚到边缘时也不带着整个工作台滚走。 */
+#raw-items,
+#steps,
+#articles {
   overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  overflow-wrap: anywhere;
+  color-scheme: dark;
+}
+
+#steps {
+  margin-top: 10px;
+}
+
+#articles {
+  height: clamp(280px, 48vh, 520px);
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+}
+
+#articles article:last-child {
+  margin-bottom: 0;
 }
 
 .log li,

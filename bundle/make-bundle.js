@@ -2,6 +2,7 @@
 // 脚本里的配置是跑这条命令时本机的当前配置，所以换了 Key 之后要再跑一次。
 const fs = require("node:fs");
 const path = require("node:path");
+const { execFileSync } = require("node:child_process");
 
 const ROOT = path.join(__dirname, "..");
 const SETUP = path.join(ROOT, "dist", "Search Agent Setup.exe");
@@ -23,12 +24,28 @@ function main() {
     die(`本机还没有配置文件 ${SETTINGS}\n先打开程序、在设置里填好 Key 保存一次。`);
   }
 
-  const config = fs.readFileSync(SETTINGS, "utf8").trim();
+  let parsed = JSON.parse(fs.readFileSync(SETTINGS, "utf8"));
+  if ([parsed.apiKey, parsed.fallbackApiKey].some((value) => String(value || "").startsWith("enc:v1:"))) {
+    // Electron safeStorage 才能解开同账户保存的密文。失败必须中止，不能发一个带无效 Key 的包。
+    try {
+      const env = { ...process.env };
+      delete env.ELECTRON_RUN_AS_NODE;
+      const output = execFileSync(require("electron"), [path.join(__dirname, "export-settings.js"), SETTINGS], {
+        encoding: "utf8", windowsHide: true, timeout: 30000, env,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      const line = output.split(/\r?\n/).find((value) => value.startsWith("SEARCH_AGENT_CONFIG:"));
+      if (!line) throw new Error("missing config");
+      parsed = JSON.parse(line.slice("SEARCH_AGENT_CONFIG:".length));
+    } catch {
+      die("无法解密当前账户的模型配置，分发包未更新。请重新保存 Key 后再试。");
+    }
+  }
+  const config = JSON.stringify(parsed, null, 2);
   // 配置是塞进 PowerShell 的单引号 here-string 里的，行首出现 '@ 会把脚本截断
   if (/^\s*'@/m.test(config)) {
     die("配置内容里有会把脚本截断的字符，先看看 agent-settings.json 是不是坏了。");
   }
-  const parsed = JSON.parse(config);
 
   fs.mkdirSync(OUT, { recursive: true });
   fs.copyFileSync(SETUP, path.join(OUT, "Search Agent Setup.exe"));
