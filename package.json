@@ -1,6 +1,6 @@
 {
   "name": "search-agent",
-  "version": "0.2.36",
+  "version": "0.2.37",
   "description": "内置浏览器 + 页面信息采集 Agent",
   "main": "electron/main.js",
   "scripts": {

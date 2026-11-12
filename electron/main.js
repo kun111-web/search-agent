@@ -345,6 +345,7 @@ function registerIpc() {
   ipcMain.handle("nav:zoom-reset", onTabs(() => tabManager.resetZoom()));
   ipcMain.handle("page:collect", () => tabManager?.collectActivePage({ wait: true }) ?? null);
   ipcMain.handle("collector:toggle", onTabs(() => tabManager.toggleCollector()));
+  ipcMain.handle("collector:close", onTabs(() => tabManager.setCollectorOpen(false)));
   ipcMain.handle("sites:default", () => DEFAULT_SITES);
   ipcMain.handle("chrome:devtools", () => {
     chromeView?.webContents.openDevTools({ mode: "detach" });
