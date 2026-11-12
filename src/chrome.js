@@ -70,7 +70,9 @@ function render(nextState) {
   forwardBtn.disabled = !state.canGoForward;
   reloadBtn.title = state.loading ? "停止" : "刷新";
   progressEl.hidden = !state.loading && !state.agentRunning;
-  collectorBtn.textContent = state.agentRunning ? "运行中" : "Agent";
+  collectorBtn.textContent = state.agentRunning ? "采集助手 · 运行中" : "采集助手";
+  collectorBtn.title = state.collectorOpen ? "收起侧边栏" : "展开侧边栏 (Ctrl+Shift+A)";
+  collectorBtn.setAttribute("aria-expanded", String(Boolean(state.collectorOpen)));
   secureEl.className = `secure${state.isSecure ? " ok" : state.displayUrl ? " warn" : ""}`;
 
   if (!editingUrl) {

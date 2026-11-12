@@ -829,6 +829,7 @@ agentStartBtn.addEventListener("click", async () => {
 
 agentStopBtn.addEventListener("click", () => window.browser.stopFilter());
 
+document.querySelector("#collapse-collector").addEventListener("click", () => window.browser.closeCollector());
 document.querySelector("#minimize-orb").addEventListener("click", () => window.browser.minimizeToOrb());
 
 document.querySelector("#copy-notes").addEventListener("click", async () => {

@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld("browser", {
   resetZoom: () => ipcRenderer.invoke("nav:zoom-reset"),
   collect: () => ipcRenderer.invoke("page:collect"),
   toggleCollector: () => ipcRenderer.invoke("collector:toggle"),
+  closeCollector: () => ipcRenderer.invoke("collector:close"),
   getDefaultSites: () => ipcRenderer.invoke("sites:default"),
   openChromeDevTools: () => ipcRenderer.invoke("chrome:devtools"),
   getSettings: () => ipcRenderer.invoke("settings:get"),
